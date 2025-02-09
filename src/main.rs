@@ -2,17 +2,24 @@ use std::cmp::min;
 use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
 use fft2d::slice::fft_2d;
-use plotters::prelude::*;
 use rustfft::num_traits::pow;
-use std::i16;
-use hound;
+use crate::plot::plot_numbers;
+use crate::to_wav::write_to_wav;
+use crate::utilities::*;
+
+mod plot;
+mod to_wav;
+mod utilities;
 
 fn main() -> Result<(), Box<dyn std::error::Error>>{
 
     // important parameters:
     let file_path = "data/hoch.png";
-    let mut table_len = 0;
-    let mut nr_harmonics = 0;
+    let table_len = 0;
+    let nr_harmonics = 0;
+    // 0 -> any number of harmonics, 1 -> the vertical only harmonics, 2 -> the horizontal only harmonics
+    // see https://dsp.stackexchange.com/questions/3511/harmonics-in-2-d-fft-signal
+    let method = 1;
 
     // Open image from disk.
     let img = image::open(file_path)?.into_luma8();
@@ -29,21 +36,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
     fft_2d(width as usize, height as usize, &mut img_buffer);
 
     // Output of fft_2d is transposed, transpose back.
-    // Now the matrix is organized as is visualized here: +
+    // Now the matrix is organized as is visualized here:
     // https://dsp.stackexchange.com/questions/3511/harmonics-in-2-d-fft-signal
     let transformed_img = transpose(width as usize, height as usize, &mut img_buffer);
-
-    // Only take the harmonics we want
-    // if table_len == 0 { table_len = transformed_img.len() }
-    if table_len == 0 { table_len = transformed_img.len()}
-    if nr_harmonics == 0 || nr_harmonics > table_len || nr_harmonics > transformed_img.len() {
-        nr_harmonics = min(table_len, transformed_img.len())
+    
+    // get relevant harmonics and process them:
+    match method {
+        0 => generate_outputs_all(&transformed_img, nr_harmonics, table_len),
+        1 => generate_outputs_vertical(&transformed_img, width as usize, table_len),
+        2 => generate_outputs_horizontal(&transformed_img, width as usize, table_len),
+        _ => Err(Box::from("invalid value for method"))
     }
-    // get the respective number of harmonics
-    let mut buffer: Vec<Complex<f64>> = transformed_img[0..nr_harmonics].to_vec();
+}
+
+
+fn generate_outputs_horizontal(fft_output: &Vec<Complex<f64>>, width: usize, mut table_len: usize)
+    -> Result<(), Box<dyn std::error::Error>> {
+    let mut buffer: Vec<Complex<f64>> = get_horizontal_harmonics(&fft_output, width);
+
+    // adjust number of harmonics and table_len
+    if table_len == 0 { table_len = width }
+    let nr_harmonics = min(table_len, buffer.len());
 
     // get magnitude of complex numbers and plot spectrogram
-    let mag: Vec<f64> = buffer.clone().into_iter().map(|x| (pow(x.re, 2) + pow(x.im, 2)).sqrt()).collect();
+    let mag: Vec<f64> = get_magnitudes(&buffer);
     let _ = plot_numbers("spectrum.png", &mag);
 
     // Pad the harmonic vector with Zeros, when we want fewer harmonics than the fft table is big
@@ -66,96 +82,89 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
     Ok(())
 }
 
+fn generate_outputs_vertical(fft_output: &Vec<Complex<f64>>, width: usize, mut table_len: usize)
+    -> Result<(), Box<dyn std::error::Error>> {
+    let mut buffer: Vec<Complex<f64>> = get_vertical_harmonics(&fft_output, width);
 
-fn _plot_complex_numbers(input: &Vec<Complex<f64>>) -> Result<(), Box<dyn std::error::Error>> {
-    let x_min = input.iter().fold(f64::INFINITY, |a, &b| a.min(b.re));
-    let x_max = input.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b.re));
-    let y_min = input.iter().fold(f64::INFINITY, |a, &b| a.min(b.im));
-    let y_max = input.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b.im));
+    // adjust number of harmonics and table_len
+    if table_len == 0 { table_len = width }
+    let nr_harmonics = min(table_len, buffer.len());
 
-    // Create a new chart
-    let root = BitMapBackend::new("complex_plot.png", (640, 480)).into_drawing_area();
-    root.fill(&WHITE)?;
+    // get magnitude of complex numbers and plot spectrogram
+    let mag: Vec<f64> = get_magnitudes(&buffer);
+    let _ = plot_numbers("spectrum.png", &mag);
 
-    // Set up the chart
-    let mut chart = ChartBuilder::on(&root)
-        .caption("Simple Vector Plot", ("Arial", 40))
-        .build_cartesian_2d(x_min..x_max, y_min.round()..y_max.round())?;
-
-    // start with origin
-    chart.draw_series(LineSeries::new(vec![(0.0, 0.0)].into_iter(), &BLUE).point_size(5))?;
-
-    // Draw the x-y scatter plot
-    chart.draw_series(LineSeries::new(
-        input.into_iter().map(|complex| (complex.re, complex.im)),
-        &RED,
-    ))?;
-
-    Ok(())
-}
-
-fn plot_numbers(name: &str, input: &Vec<f64>) -> Result<(), Box<dyn std::error::Error>> {
-    let y_min = input.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-    let y_max = input.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
-
-    // Create a new chart
-    let root = BitMapBackend::new(name, (640, 480)).into_drawing_area();
-    root.fill(&WHITE)?;
-
-    // Set up the chart
-    let mut chart = ChartBuilder::on(&root)
-        .caption("Simple Vector Plot", ("Arial", 40))
-        .build_cartesian_2d(0..(input.len() as i32), y_min.round()..y_max.round())?;
-
-    // Draw the x-y scatter plot
-    chart.draw_series(LineSeries::new(
-        input.into_iter().enumerate().map(|(x, y)| (x as i32, *y)),
-        &RED,
-    ))?;
-
-    Ok(())
-}
-
-fn write_to_wav (name: &str, data: &Vec<f64>) -> Result<(), Box<dyn std::error::Error>>  {
-
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate: 48000,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let mut writer = hound::WavWriter::create(name, spec).unwrap();
-
-    let max = data.iter().fold(0.0, |a: f64, &b| a.max(b.abs()));
-    let min = data.iter().fold(f64::INFINITY, |a: f64, &b| a.min(b.abs()));
-
-    let rescaled = &data.iter().map(|x| rescale(*x, min, max, -(i16::MAX as f64), i16::MAX as f64)).collect();
-    let _ = plot_numbers("wavetable.png", &rescaled);
-
-    for sample in rescaled.into_iter() {
-        writer.write_sample(*sample as i16).unwrap();
-    }
-
-    Ok(())
-}
-
-fn rescale<T: Copy + std::ops::Add<Output = T> + std::ops::Sub<Output = T> + std::ops::Div<Output = T>+ std::ops::Mul<Output = T>>
-(value: T, old_min: T, old_max: T, new_min: T, new_max: T) -> T {
-    (((value - old_min) / (old_max - old_min)) * (new_max - new_min)) + new_min
-}
-
-// copied from fft_2d because it is not a public function:
-fn transpose<T: Copy + Default>(width: usize, height: usize, matrix: &[T]) -> Vec<T> {
-    let mut ind = 0;
-    let mut ind_tr;
-    let mut transposed = vec![T::default(); matrix.len()];
-    for row in 0..height {
-        ind_tr = row;
-        for _ in 0..width {
-            transposed[ind_tr] = matrix[ind];
-            ind += 1;
-            ind_tr += height;
+    // Pad the harmonic vector with Zeros, when we want fewer harmonics than the fft table is big
+    if table_len > nr_harmonics {
+        for _ in 0..(table_len - nr_harmonics) {
+            buffer.push(Complex::new(0.0, 0.0));
         }
     }
-    transposed
+
+    // apply the inverse fft
+    let mut planner = FftPlanner::new();
+    let fft = planner.plan_fft_inverse(table_len);
+    fft.process(&mut buffer);
+
+    // use only the real part as wave table
+    let real: Vec<f64> = buffer.into_iter().map(|x| x.re).collect();
+
+    let _ = write_to_wav("wave.wav", &real);
+
+    Ok(())
+}
+
+fn generate_outputs_all(fft_output: &Vec<Complex<f64>>, mut nr_harmonics: usize, mut table_len: usize)
+    -> Result<(), Box<dyn std::error::Error>> {
+
+    // adjust number of harmonics and table_len
+    if table_len == 0 { table_len = fft_output.len() }
+    if nr_harmonics == 0 || nr_harmonics > table_len || nr_harmonics > fft_output.len() {
+        nr_harmonics = min(table_len, fft_output.len())
+    }
+        
+    let mut buffer: Vec<Complex<f64>> = get_first_harmonics(&fft_output, nr_harmonics);
+
+    // get magnitude of complex numbers and plot spectrogram
+    let mag: Vec<f64> = get_magnitudes(&buffer);
+    let _ = plot_numbers("spectrum.png", &mag);
+
+    // Pad the harmonic vector with Zeros, when we want fewer harmonics than the fft table is big
+    if table_len > nr_harmonics {
+        for _ in 0..(table_len - nr_harmonics) {
+            buffer.push(Complex::new(0.0, 0.0));
+        }
+    }
+
+    // apply the inverse fft
+    let mut planner = FftPlanner::new();
+    let fft = planner.plan_fft_inverse(table_len);
+    fft.process(&mut buffer);
+
+    // use only the real part as wave table
+    let real: Vec<f64> = buffer.into_iter().map(|x| x.re).collect();
+
+    let _ = write_to_wav("wave.wav", &real);
+
+    Ok(())
+}
+
+fn get_magnitudes(input: &Vec<Complex<f64>>) -> Vec<f64> {
+    input.clone().into_iter().map(|x| (pow(x.re, 2) + pow(x.im, 2)).sqrt()).collect()
+}
+
+fn get_horizontal_harmonics(input: &Vec<Complex<f64>>, width: usize) -> Vec<Complex<f64>> {
+    input.iter()
+        .enumerate()
+        .filter(|(i, _)| i % width == 0)
+        .map(|(_, elem)| *elem)
+        .collect()
+}
+
+fn get_vertical_harmonics(input: &Vec<Complex<f64>>, width: usize) -> Vec<Complex<f64>> {
+    input[0..width].to_vec()
+}
+
+fn get_first_harmonics(input: &Vec<Complex<f64>>, how_many: usize) -> Vec<Complex<f64>> {
+    input[0..how_many].to_vec()
 }
