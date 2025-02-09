@@ -14,16 +14,18 @@ mod utilities;
 fn main() -> Result<(), Box<dyn std::error::Error>>{
 
     // important parameters:
-    let file_path = "data/hoch.png";
+    let file_path = "data/mandrill.jpg";
     let table_len = 0;
     let nr_harmonics = 0;
     // 0 -> any number of harmonics, 1 -> the vertical only harmonics, 2 -> the horizontal only harmonics
     // see https://dsp.stackexchange.com/questions/3511/harmonics-in-2-d-fft-signal
     let method = 1;
+    let normalize = true;
 
     // Open image from disk.
     let img = image::open(file_path)?.into_luma8();
     let (width, height) = img.dimensions();
+    let norm_factor: f64 = 1.0 / ((width as f64 * height as f64).sqrt());
 
     // Convert the image buffer to complex numbers to be able to compute the FFT.
     let mut img_buffer: Vec<Complex<f64>> = img
@@ -36,22 +38,72 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
     fft_2d(width as usize, height as usize, &mut img_buffer);
 
     // Output of fft_2d is transposed, transpose back.
-    // Now the matrix is organized as is visualized here:
+    // Then the matrix is organized as is visualized here:
     // https://dsp.stackexchange.com/questions/3511/harmonics-in-2-d-fft-signal
-    let transformed_img = transpose(width as usize, height as usize, &mut img_buffer);
+    let mut transformed_img = transpose(width as usize, height as usize, &mut img_buffer);
+
+    // Normalize all values
+    for num in transformed_img.iter_mut() {
+        *num *= norm_factor;
+    }
     
     // get relevant harmonics and process them:
-    match method {
+    let real =  match method {
         0 => generate_outputs_all(&transformed_img, nr_harmonics, table_len),
         1 => generate_outputs_vertical(&transformed_img, width as usize, table_len),
         2 => generate_outputs_horizontal(&transformed_img, width as usize, table_len),
-        _ => Err(Box::from("invalid value for method"))
-    }
+        3 => chain_multiple_tables(&transformed_img, width as usize, height as usize, table_len),
+        _ => panic!("invalid value for method")
+    };
+
+    // write wavetable
+    let _ = write_to_wav("wave.wav", &real, normalize);
+
+    Ok(())
 }
 
+fn chain_multiple_tables(fft_output: &Vec<Complex<f64>>, width: usize, height: usize, mut table_len: usize) -> Vec<f64> {
 
-fn generate_outputs_horizontal(fft_output: &Vec<Complex<f64>>, width: usize, mut table_len: usize)
-    -> Result<(), Box<dyn std::error::Error>> {
+    // adjust number of harmonics and table_len
+    if table_len == 0 { table_len = width }
+    let nr_harmonics = min(table_len, width);
+
+    let mut chained: Vec<f64> = Vec::new();
+
+    for i in 0..height {
+        let start_index = i * width;
+        let end_index = (i + 1) * width;
+        let mut buffer: Vec<Complex<f64>> = fft_output[start_index..end_index].to_vec();
+
+        // Pad the harmonic vector with Zeros, when we want fewer harmonics than the fft table is big
+        if table_len > nr_harmonics {
+            for _ in 0..(table_len - nr_harmonics) {
+                buffer.push(Complex::new(0.0, 0.0));
+            }
+        }
+
+        // apply the inverse fft
+        let mut planner = FftPlanner::new();
+        let fft = planner.plan_fft_inverse(table_len);
+        fft.process(&mut buffer);
+
+        // use only the real part as wave table
+        let mut real: Vec<f64> = buffer.into_iter().map(|x| x.re).collect();
+
+        // rescale
+        let max = real.iter().fold(0.0, |a: f64, &b| a.max(b.abs()));
+        let min = real.iter().fold(f64::INFINITY, |a: f64, &b| a.min(b.abs()));
+
+        // something is off with this rescaling...
+        real = real.iter().map(|x| rescale(*x, min, max, 0.0, 1.0)).collect();
+
+        chained.append(&mut real);
+    }
+
+    chained
+}
+
+fn generate_outputs_horizontal(fft_output: &Vec<Complex<f64>>, width: usize, mut table_len: usize) -> Vec<f64> {
     let mut buffer: Vec<Complex<f64>> = get_horizontal_harmonics(&fft_output, width);
 
     // adjust number of harmonics and table_len
@@ -75,15 +127,10 @@ fn generate_outputs_horizontal(fft_output: &Vec<Complex<f64>>, width: usize, mut
     fft.process(&mut buffer);
 
     // use only the real part as wave table
-    let real: Vec<f64> = buffer.into_iter().map(|x| x.re).collect();
-
-    let _ = write_to_wav("wave.wav", &real);
-
-    Ok(())
+    buffer.into_iter().map(|x| x.re).collect()
 }
 
-fn generate_outputs_vertical(fft_output: &Vec<Complex<f64>>, width: usize, mut table_len: usize)
-    -> Result<(), Box<dyn std::error::Error>> {
+fn generate_outputs_vertical(fft_output: &Vec<Complex<f64>>, width: usize, mut table_len: usize) -> Vec<f64>  {
     let mut buffer: Vec<Complex<f64>> = get_vertical_harmonics(&fft_output, width);
 
     // adjust number of harmonics and table_len
@@ -107,15 +154,10 @@ fn generate_outputs_vertical(fft_output: &Vec<Complex<f64>>, width: usize, mut t
     fft.process(&mut buffer);
 
     // use only the real part as wave table
-    let real: Vec<f64> = buffer.into_iter().map(|x| x.re).collect();
-
-    let _ = write_to_wav("wave.wav", &real);
-
-    Ok(())
+    buffer.into_iter().map(|x| x.re).collect()
 }
 
-fn generate_outputs_all(fft_output: &Vec<Complex<f64>>, mut nr_harmonics: usize, mut table_len: usize)
-    -> Result<(), Box<dyn std::error::Error>> {
+fn generate_outputs_all(fft_output: &Vec<Complex<f64>>, mut nr_harmonics: usize, mut table_len: usize) -> Vec<f64>  {
 
     // adjust number of harmonics and table_len
     if table_len == 0 { table_len = fft_output.len() }
@@ -142,11 +184,7 @@ fn generate_outputs_all(fft_output: &Vec<Complex<f64>>, mut nr_harmonics: usize,
     fft.process(&mut buffer);
 
     // use only the real part as wave table
-    let real: Vec<f64> = buffer.into_iter().map(|x| x.re).collect();
-
-    let _ = write_to_wav("wave.wav", &real);
-
-    Ok(())
+    buffer.into_iter().map(|x| x.re).collect()
 }
 
 fn get_magnitudes(input: &Vec<Complex<f64>>) -> Vec<f64> {

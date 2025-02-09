@@ -3,7 +3,7 @@ use hound;
 use crate::utilities::rescale;
 use crate::plot::plot_numbers;
 
-pub fn write_to_wav (name: &str, data: &Vec<f64>) -> Result<(), Box<dyn std::error::Error>>  {
+pub fn write_to_wav (name: &str, data: &Vec<f64>, normalize: bool) -> Result<(), Box<dyn std::error::Error>>  {
 
     let spec = hound::WavSpec {
         channels: 1,
@@ -12,15 +12,23 @@ pub fn write_to_wav (name: &str, data: &Vec<f64>) -> Result<(), Box<dyn std::err
         sample_format: hound::SampleFormat::Int,
     };
     let mut writer = hound::WavWriter::create(name, spec).unwrap();
+    
+    let samples: Vec<f64>;
 
-    let max = data.iter().fold(0.0, |a: f64, &b| a.max(b.abs()));
-    let min = data.iter().fold(f64::INFINITY, |a: f64, &b| a.min(b.abs()));
+    // normalize if necessary
+    if normalize {
+        let max = data.iter().fold(0.0, |a: f64, &b| a.max(b.abs()));
+        let min = data.iter().fold(f64::INFINITY, |a: f64, &b| a.min(b.abs()));
 
-    let rescaled = &data.iter().map(|x| rescale(*x, min, max, -(i16::MAX as f64), i16::MAX as f64)).collect();
-    let _ = plot_numbers("wavetable.png", &rescaled);
+        samples = data.iter().map(|x| rescale(*x, min, max, -(i16::MAX as f64), i16::MAX as f64)).collect();
+    } else {
+        samples = data.iter().map(|x| x * i16::MAX as f64).collect();
+    }
+    
+    let _ = plot_numbers("wavetable.png", &samples);
 
-    for sample in rescaled.into_iter() {
-        writer.write_sample(*sample as i16).unwrap();
+    for sample in samples.into_iter() {
+        writer.write_sample(sample as i16).unwrap();
     }
 
     Ok(())

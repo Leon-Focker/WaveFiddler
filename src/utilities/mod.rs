@@ -1,3 +1,5 @@
+use image::ImageBuffer;
+
 pub fn rescale<T: Copy + std::ops::Add<Output = T> + std::ops::Sub<Output = T> + std::ops::Div<Output = T>+ std::ops::Mul<Output = T>>
 (value: T, old_min: T, old_max: T, new_min: T, new_max: T) -> T {
     (((value - old_min) / (old_max - old_min)) * (new_max - new_min)) + new_min
