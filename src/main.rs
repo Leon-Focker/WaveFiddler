@@ -14,22 +14,36 @@ mod utilities;
 fn main() -> Result<(), Box<dyn std::error::Error>>{
 
     // important parameters:
-    let file_path = "data/mandrill.jpg";
-    let table_len = 0;
+    let file_path = "data/colors.png";
+    let table_len = 1024;
     let nr_harmonics = 0;
     // 0 -> any number of harmonics, 1 -> the vertical only harmonics, 2 -> the horizontal only harmonics
     // see https://dsp.stackexchange.com/questions/3511/harmonics-in-2-d-fft-signal
-    let method = 1;
+    let method = 0;
     let normalize = true;
 
     // Open image from disk.
     let img = image::open(file_path)?.into_luma8();
     let (width, height) = img.dimensions();
-    let norm_factor: f64 = 1.0 / ((width as f64 * height as f64).sqrt());
 
+    let test = split_image(img.clone().as_raw(), width as usize, height as usize);
+
+    let mut real: Vec<f64> = Vec::new();
+
+    for i in 0..test.len() {
+        real.append(&mut transform_image_data(test[i].clone(), 32, 32, table_len, nr_harmonics, method));
+    }
+
+    // write wavetable
+    let _ = write_to_wav("wave.wav", &real, normalize);
+
+    Ok(())
+}
+
+fn transform_image_data(image_data: Vec<u8>, width: u32, height: u32, table_len: usize, nr_harmonics: usize, method: i32) -> Vec<f64> {
+    let norm_factor: f64 = 1.0 / ((width as f64 * height as f64).sqrt());
     // Convert the image buffer to complex numbers to be able to compute the FFT.
-    let mut img_buffer: Vec<Complex<f64>> = img
-        .as_raw()
+    let mut img_buffer: Vec<Complex<f64>> = image_data
         .iter()
         .map(|&pix| Complex::new(pix as f64 / 255.0, 0.0))
         .collect();
@@ -46,20 +60,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
     for num in transformed_img.iter_mut() {
         *num *= norm_factor;
     }
-    
+
     // get relevant harmonics and process them:
-    let real =  match method {
+    match method {
         0 => generate_outputs_all(&transformed_img, nr_harmonics, table_len),
         1 => generate_outputs_vertical(&transformed_img, width as usize, table_len),
         2 => generate_outputs_horizontal(&transformed_img, width as usize, table_len),
         3 => chain_multiple_tables(&transformed_img, width as usize, height as usize, table_len),
         _ => panic!("invalid value for method")
-    };
-
-    // write wavetable
-    let _ = write_to_wav("wave.wav", &real, normalize);
-
-    Ok(())
+    }
 }
 
 fn chain_multiple_tables(fft_output: &Vec<Complex<f64>>, width: usize, height: usize, mut table_len: usize) -> Vec<f64> {
