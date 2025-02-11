@@ -1,7 +1,7 @@
 use rustfft::num_complex::Complex;
 use plotters::prelude::*;
 
-pub fn _plot_complex_numbers(input: &Vec<Complex<f64>>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn _plot_complex_numbers(input: &[Complex<f64>]) -> Result<(), Box<dyn std::error::Error>> {
     let x_min = input.iter().fold(f64::INFINITY, |a, &b| a.min(b.re));
     let x_max = input.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b.re));
     let y_min = input.iter().fold(f64::INFINITY, |a, &b| a.min(b.im));
@@ -21,14 +21,14 @@ pub fn _plot_complex_numbers(input: &Vec<Complex<f64>>) -> Result<(), Box<dyn st
 
     // Draw the x-y scatter plot
     chart.draw_series(LineSeries::new(
-        input.into_iter().map(|complex| (complex.re, complex.im)),
+        input.iter().map(|complex| (complex.re, complex.im)),
         &RED,
     ))?;
 
     Ok(())
 }
 
-pub fn plot_numbers(name: &str, input: &Vec<f64>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn plot_numbers(name: &str, input: &[f64]) -> Result<(), Box<dyn std::error::Error>> {
     let y_min = input.iter().fold(f64::INFINITY, |a, &b| a.min(b));
     let y_max = input.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
 
@@ -43,7 +43,7 @@ pub fn plot_numbers(name: &str, input: &Vec<f64>) -> Result<(), Box<dyn std::err
 
     // Draw the x-y scatter plot
     chart.draw_series(LineSeries::new(
-        input.into_iter().enumerate().map(|(x, y)| (x as i32, *y)),
+        input.iter().enumerate().map(|(x, y)| (x as i32, *y)),
         &RED,
     ))?;
 
