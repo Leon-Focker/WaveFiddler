@@ -4,6 +4,7 @@ use fft2d::slice::fft_2d;
 use crate::plot::plot_numbers;
 use crate::to_wav::write_to_wav;
 use crate::utilities::*;
+use std::path::Path;
 
 mod plot;
 mod to_wav;
@@ -12,19 +13,33 @@ mod utilities;
 fn main() -> Result<(), Box<dyn std::error::Error>>{
 
     // important parameters:
-    let file_path = "data/colors.png";
-    let table_len = 1024;
+    let file_path = "data/banana.jpg";
+    let table_len = 512;
 
-    // TODO get multiple layers from image into table of wavetables.
-
-    // Open image from disk.
-    let img = image::open(file_path)?.into_luma8();
+    // Open image from disk as rgb, save the color values into vectors
+    let img = image::open(file_path)?.into_rgb8();
     let (width, height) = img.dimensions();
+    let color_vec_len = img.len() / 3;
+    let mut r_vector = Vec::with_capacity(color_vec_len);
+    let mut g_vector = Vec::with_capacity(color_vec_len);
+    let mut b_vector = Vec::with_capacity(color_vec_len);
+
+    for pixel in img.as_raw().chunks_exact(3) {
+        r_vector.push(pixel[0]);
+        g_vector.push(pixel[1]);
+        b_vector.push(pixel[2]);
+    }
+
+    let mut wavetable = Vec::with_capacity(table_len * 3);
+
     // get a wavetable (1D Vector of f64) from the image data (2D Vector of f64)
-    let wavetable = get_wave_table_from_image(img.as_raw().clone(), width, height, table_len);
+    wavetable.append(&mut get_wave_table_from_image(r_vector, width, height, table_len));
+    wavetable.append(&mut get_wave_table_from_image(b_vector, width, height, table_len));
+    wavetable.append(&mut get_wave_table_from_image(g_vector, width, height, table_len));
 
     // write wavetable to audio file
-    let _ = write_to_wav("wave.wav", &wavetable, true);
+    let file_name = Path::new(file_path).file_stem().unwrap().to_str().unwrap();
+    let _ = write_to_wav(format!("{}_{}{}", file_name, table_len, ".wav").as_str(), &wavetable, true);
 
     Ok(())
 }
@@ -52,9 +67,6 @@ fn get_wave_table_from_image(image_data: Vec<u8>, width: u32, height: u32, mut t
     for num in transformed_img.iter_mut() {
         *num *= norm_factor;
     }
-
-    // Set DC offset to 0
-    transformed_img[0] = Complex::new(0.0, 0.0);
 
     // get relevant harmonics and process them:
     generate_diagonal_outputs(&transformed_img, width as usize, height as usize, table_len)
