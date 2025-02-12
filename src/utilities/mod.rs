@@ -1,5 +1,4 @@
-use std::cmp::min;
-use num_traits::Num;
+use num_traits::{Num, pow};
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
 
@@ -24,6 +23,7 @@ pub fn transpose<T: Copy + Default>(width: usize, height: usize, matrix: &[T]) -
     transposed
 }
 
+// take a 32x32 sub-image from an image buffer in row-major order.
 fn partial_image_32<T: Copy>(image_data: &[T], width: usize, height: usize, (start_x, start_y): (usize, usize)) -> Result<Vec<T>, ()> {
     if start_x + 32 >= width || start_y + 32 >= height || width * height > image_data.len() {
        return Err(())
@@ -42,6 +42,7 @@ fn partial_image_32<T: Copy>(image_data: &[T], width: usize, height: usize, (sta
     Ok(result)
 }
 
+// split one image vector into a collection of image vectors
 pub fn _split_image<T: Copy>(image_data: &[T], width: usize, height: usize) -> Vec<Vec<T>> {
     let mut result: Vec<Vec<T>> = Vec::new();
     let per_row = width / 32;
@@ -121,7 +122,40 @@ pub fn downsampling(input: &[Complex<f64>], new_length: usize) -> Vec<Complex<f6
     // inverse FFT
     let mut planner_inv = FftPlanner::new();
     let fft_inv = planner_inv.plan_fft_inverse(new_length);
-    fft_inv.process(&mut *buffer);
+    fft_inv.process(&mut buffer);
 
     buffer
+}
+
+// Same as above but for Vec<f64>
+/*pub fn downsampling(input: &mut [f64], new_length: usize) -> Vec<f64> {
+    // only do work when new_length < current_length (because we don't want to upsample)
+    if new_length >= input.len() { return input.to_vec() }
+
+    let current_length = input.len();
+
+    // Convert the input buffer to complex numbers to be able to compute the FFT.
+    let mut buffer: Vec<Complex<f64>> = input
+        .iter()
+        .map(|&val| Complex::new(val, 0.0))
+        .collect();
+
+    // FFT
+    let mut planner_for = FftPlanner::new();
+    let fft_for = planner_for.plan_fft_forward(current_length);
+    fft_for.process(&mut *buffer);
+
+    // highpass
+    buffer = buffer[0..new_length].to_vec();
+
+    // inverse FFT
+    let mut planner_inv = FftPlanner::new();
+    let fft_inv = planner_inv.plan_fft_inverse(new_length);
+    fft_inv.process(&mut *buffer);
+
+    get_magnitudes(&mut buffer)
+}*/
+
+pub fn get_magnitudes(input: &[Complex<f64>]) -> Vec<f64> {
+    input.iter().map(|x| (pow(x.re, 2) + pow(x.im, 2)).sqrt()).collect()
 }
