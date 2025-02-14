@@ -98,6 +98,23 @@ pub fn sum_diagonals<T>(input: &[T], width: usize, height: usize) -> Vec<T>
     result
 }
 
+pub fn linear_to_diagonals<T>(input: &[T], width: usize, height: usize) -> Vec<T>
+    where T: Num + Copy + From<f64>
+{
+    let mut result: Vec<T> = Vec::with_capacity(width * height);
+    let mut offset: usize = 0;
+
+    for _ in 0..height {
+        for i in 0..width {
+            result.push(input[i + offset])
+        }
+        offset += 1;
+    }
+
+    result
+
+}
+
 // If we also took the average, some tests for this would be:
 // assert_eq!(vec![1.0, 3.5, 6.0, 7.0, 9.5, 12.0], average_diagonals(&vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0], 4, 3));
 // assert_eq!(vec![1.0, 4.5, 5.5, 6.5, 7.5, 8.5, 12.0], average_diagonals(&vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0], 6, 2));
@@ -158,4 +175,9 @@ pub fn downsampling(input: &[Complex<f64>], new_length: usize) -> Vec<Complex<f6
 
 pub fn get_magnitudes(input: &[Complex<f64>]) -> Vec<f64> {
     input.iter().map(|x| (pow(x.re, 2) + pow(x.im, 2)).sqrt()).collect()
+}
+
+// Todo implement properly
+pub fn f64_max(input: &[f64]) -> f64 {
+    input.iter().fold(0.0_f64, |a, &b| a.max(b.abs()))
 }

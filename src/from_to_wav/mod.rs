@@ -29,3 +29,9 @@ pub fn write_to_wav (name: &str, data: &[f64], normalize: bool) -> Result<(), Bo
 
     Ok(())
 }
+
+/// reads the sample data into a Vector
+pub fn read_from_wav(file_path: &str) -> Vec<f64> {
+    let mut reader = hound::WavReader::open(file_path).unwrap();
+    reader.samples::<i32>().map(| s | s.unwrap() as f64).collect()
+}
