@@ -1,6 +1,6 @@
 use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
-use fft2d::slice::fft_2d;
+use fft2d::slice::{fft_2d, ifft_2d};
 use crate::plot::plot_numbers;
 use crate::from_to_wav::{get_wav_specs, read_from_wav, write_to_wav};
 use crate::from_to_image::write_to_image;
@@ -178,13 +178,20 @@ fn samples_to_2d_vec(samples: &[f64], table_len: usize) -> Vec<f64> {
     let fft = planner.plan_fft_forward(table_len);
     fft.process(&mut buffer);
 
-    linear_to_diagonals(
-        &buffer
-            .iter()
-            .map( | x | x.re)
-            .collect::<Vec<f64>>(),
+    // get 2D vector:
+    buffer = linear_to_diagonals(
+        &buffer,
         width,
-        height)
+        height);
+
+    // apply inverse 2D FFT
+    ifft_2d(width, height, &mut buffer);
+
+    // Output of ifft_2d is transposed, transpose back and collect real part
+    transpose(width, height, &buffer)
+        .iter()
+        .map(|complex| complex.re )
+        .collect()
 }
 
 // TODO horrible name
