@@ -582,6 +582,7 @@ dependencies = [
  "fft2d",
  "hound",
  "image 0.25.5",
+ "log",
  "num-traits",
  "plotters",
  "rustfft",

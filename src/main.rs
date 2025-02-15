@@ -2,7 +2,7 @@ use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
 use fft2d::slice::fft_2d;
 use crate::plot::plot_numbers;
-use crate::from_to_wav::{read_from_wav, write_to_wav};
+use crate::from_to_wav::{get_wav_specs, read_from_wav, write_to_wav};
 use crate::from_to_image::write_to_image;
 use crate::utilities::*;
 use std::path::Path;
@@ -27,7 +27,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
     if ["jpg", "png"].contains(&file_ext) {
         transform_image_to_sound(file_path, table_len)
     } else if ["wav"].contains(&file_ext) {
-        transform_sound_to_image(file_path, table_len)
+        // transform_sound_to_image(file_path, table_len)
+        sound_to_img_sequence(file_path)
     } else {
         println!("sorry, this file format is not supported at the moment: {}", file_ext);
         Ok(())
@@ -64,11 +65,79 @@ fn transform_image_to_sound(file_path: &str, table_len: usize) -> Result<(), Box
     Ok(())
 }
 
+// TODO normalisieren...
+fn sound_to_img_sequence(file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let file_name = Path::new(file_path).file_stem().and_then(|s| s.to_str()).unwrap();
+    let samples = read_from_wav(file_path);
+    let nr_samples = samples.len() as u32;
+    let audio_spec = get_wav_specs(file_path);
+    let sample_rate = audio_spec.sample_rate;
+    let nr_channels = audio_spec.channels;
+    let frame_rate = 24; // TODO
+    // we double table_size, so the windows overlap
+    let table_size = (sample_rate / frame_rate) * 2;
+    let nr_frames = ((nr_samples / nr_channels as u32) / (table_size / 2)) - 1;
+    let width = (table_size - 1) / 2;
+    let height= width;
+
+    if !nr_channels == 2 { panic!("please use an audio file with exactly 2 channels!") }
+
+    for i in 0..nr_frames {
+        println!("frame {i}");
+        // dividing by 2 for overlapping windows and multiplying by 2 for 2 interleaved audio
+        // channels cancels out here:
+        let start_sample = (table_size * i) as usize;
+        // ... here it does not, multiply by 2 for 2 audio channels
+        let end_sample = start_sample + (table_size * 2) as usize;
+        generate_frame_from_audio(format!("frames/{}_{}.jpg", file_name, i).as_str(),
+                                  &samples[start_sample..end_sample],
+                                  table_size as usize,
+                                  width as usize,
+                                  height as usize).expect("generating frame went wrong");
+    }
+
+    Ok(())
+}
+
+fn generate_frame_from_audio(name: &str, audio_data: &[f64], table_len: usize, width: usize, height: usize)
+    -> Result<(), Box<dyn std::error::Error>>
+{
+    let mut pixel_data: Vec<u8> = Vec::with_capacity(width * height * 3);
+    let left_channel: Vec<f64> = audio_data.iter().step_by(2).cloned().collect();
+    let right_channel: Vec<f64> = audio_data.iter().skip(1).step_by(2).cloned().collect();
+    let mid: Vec<f64> = audio_data.chunks(2)
+        .map(|chunk| chunk.iter().sum())
+        .collect();
+
+    let lum_vec1 = samples_to_2d_vec(&left_channel, table_len);
+    let lum_vec2 = samples_to_2d_vec(&right_channel, table_len);
+    let lum_vec3 = samples_to_2d_vec(&mid, table_len);
+    //let lum_vec4 = samples_to_2d_vec(&left_channel, table_len);
+    //let lum_vec2 = samples_to_2d_vec(&samples[table_len..table_len*2], table_len);
+    //let lum_vec3 = samples_to_2d_vec(&samples[table_len*2..table_len*3], table_len);
+    //let lum_vec4 = audio_data;
+    //let samples4_max = f64_max(&lum_vec4);
+
+    for ((r, g), b) in lum_vec1.iter().zip(lum_vec2).zip(lum_vec3) {
+        let r_val = (r * 255.0) as u8;
+        let g_val = (g * 255.0) as u8;
+        let b_val = (b * 255.0) as u8;
+        //let w_val = (w / samples4_max * 255.0) as u8;
+        pixel_data.push(r_val.saturating_add(0));
+        pixel_data.push(g_val.saturating_add(0));
+        pixel_data.push(b_val.saturating_add(0));
+    }
+
+    let _ = write_to_image(name, &pixel_data, width, height);
+
+    Ok(())
+}
+
 fn transform_sound_to_image(file_path: &str, table_len: usize) -> Result<(), Box<dyn std::error::Error>> {
     let file_name = Path::new(file_path).file_stem().and_then(|s| s.to_str()).unwrap();
     let width = (table_len - 1) / 2;
     let height = width;
-    let samples = read_from_wav(file_path)[256..].to_vec();
+    let samples = read_from_wav(file_path);
     let mut pixel_data: Vec<u8> = Vec::with_capacity(width * height * 3);
 
     let lum_vec1 = samples_to_2d_vec(&samples[0..table_len], table_len);

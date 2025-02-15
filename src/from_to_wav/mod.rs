@@ -1,3 +1,4 @@
+use hound::WavSpec;
 use crate::utilities::rescale;
 use crate::plot::plot_numbers;
 
@@ -30,8 +31,12 @@ pub fn write_to_wav (name: &str, data: &[f64], normalize: bool) -> Result<(), Bo
     Ok(())
 }
 
-/// reads the sample data into a Vector
+/// reads the sample data into a Vector, the channel data is interleaved.
 pub fn read_from_wav(file_path: &str) -> Vec<f64> {
     let mut reader = hound::WavReader::open(file_path).unwrap();
     reader.samples::<i32>().map(| s | s.unwrap() as f64).collect()
+}
+
+pub fn get_wav_specs(file_path: &str) -> WavSpec {
+    hound::WavReader::open(file_path).unwrap().spec()
 }
