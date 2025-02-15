@@ -140,7 +140,7 @@ fn transform_sound_to_image(file_path: &str, table_len: usize) -> Result<(), Box
 
 // TODO horrible name
 fn samples_to_2d_vec(samples: &[f64], table_len: usize) -> Vec<f64> {
-    let sample_max = f64_max(&samples);
+    let sample_max = f64_max(samples);
     let width = (table_len - 1) / 2;
     let height = width;
 

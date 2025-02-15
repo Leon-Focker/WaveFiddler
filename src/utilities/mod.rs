@@ -102,13 +102,11 @@ pub fn linear_to_diagonals<T>(input: &[T], width: usize, height: usize) -> Vec<T
     where T: Num + Copy + From<f64>
 {
     let mut result: Vec<T> = Vec::with_capacity(width * height);
-    let mut offset: usize = 0;
 
-    for _ in 0..height {
+    for (offset, _) in (0..height).enumerate() {
         for i in 0..width {
             result.push(input[i + offset])
         }
-        offset += 1;
     }
 
     result

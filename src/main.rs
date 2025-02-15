@@ -1,15 +1,29 @@
 use std::path::Path;
-use std::env;
 use image_dft::*;
+use clap::Parser;
+
+/// Command Line Arguments
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    /// Path to the input file
+    input: Option<String>,
+
+    /// Window Size the fft, defaults to 512
+    #[arg(short, long, default_value_t = 512)]
+    fft_size: u32,
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>>{
+    // parse command line arguments
+    let cli = Cli::parse();
 
-    let args: Vec<String> = env::args().collect();
+    if cli.input.is_none() {
+        panic!("no input file!")
+    }
 
-    // important parameters:
-    // TODO error when not supplied
-    let file_path: &str = &args[1];
-    let table_len: usize = args[2].parse::<usize>().unwrap_or(512);
+    let file_path: &str = &cli.input.unwrap();
+    let table_len: usize = cli.fft_size.try_into().unwrap();
     let file_ext = Path::new(file_path).extension().and_then(|s| s.to_str()).unwrap();
 
     // file extension determines, what function is called
