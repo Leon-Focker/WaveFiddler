@@ -38,7 +38,7 @@ pub fn plot_numbers(name: &str, input: &[f64]) -> Result<(), Box<dyn std::error:
 
     // Set up the chart
     let mut chart = ChartBuilder::on(&root)
-        .caption("Simple Vector Plot", ("Arial", 40))
+        .caption(name, ("Arial", 40))
         .build_cartesian_2d(0..(input.len() as i32), y_min.round()..y_max.round())?;
 
     // Draw the x-y scatter plot

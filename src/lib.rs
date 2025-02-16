@@ -11,7 +11,7 @@ use clap::Parser;
 mod plot;
 mod from_to_wav;
 mod from_to_image;
-mod utilities;
+pub mod utilities;
 
 /// Command-line arguments for the application.
 ///
@@ -23,6 +23,11 @@ pub struct Cli {
     /// Path to the input file
     pub input: Option<String>,
 
+    // TODO lib name in standard dir name
+    /// Path to the output directory, will be created if it does not exist.
+    #[arg(short, long, default_value_t = String::from("./image_dft_outputs/"))]
+    pub output: String,
+
     /// The framerate that is used to generate an image sequence
     #[arg(short, long, default_value_t = 24)]
     frame_rate: u8,
@@ -32,9 +37,17 @@ pub struct Cli {
     fft_size: u32,
 
     // TODO which method for image generation
-    // TODO select how many images or wavetables to generate
     // TODO decide how audio channels map to color
+
+    // TODO select how many wavetables to generate
+    // TODO method for audio generation
+
     // TODO normalisieren an/aus (für wavetables und bilder)
+
+    /// Generate a single frame instead of the entire image sequence.
+    /// Specify the start sample, using the number of samples defined by --fft_size.
+    #[arg(long)]
+    pub single_frame: Option<u64>,
 
     /// Print information about what's happening
     #[arg(short, long, default_value_t = false)]
@@ -67,9 +80,11 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
     // we double table_size, so the windows overlap
     let table_size = (sample_rate / frame_rate) * 2;
     let nr_frames = ((nr_samples / nr_channels as u32) / (table_size / 2)) - 1;
-    let width = (table_size - 1) / 2;
-    let height= width;
     let verbose = cl_arguments.verbose;
+
+    // make sure the output directory exists
+    ensure_directory_exists(&cl_arguments.output)
+        .expect("something went wrong while checking for the output directory");
 
     // Make sure a stereo sound file ist used!
     if nr_channels != 2 {
@@ -77,24 +92,43 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
     }
 
     // Generate all frames
-    // TODO Select which ones to generate
-    for i in 0..nr_frames {
-        if verbose { println!("generating frame {i}"); }
+    match cl_arguments.single_frame {
+        Some(sample_idx) => {
+            if verbose { println!("generating frame..."); }
 
-        // dividing by 2 for overlapping windows and multiplying by 2 for 2 interleaved audio
-        // channels cancels out here:
-        let start_sample = (table_size * i) as usize;
+            // multiply by 2 (stereo file)
+            let start_sample = (sample_idx * 2) as usize;
+            let table_size = cl_arguments.fft_size as usize;
+            let end_sample = start_sample + (table_size * 2);
+            let img_dimension = (table_size - 1) / 2;
 
-        // ... here it does not, multiply by 2, for 2 audio channels
-        let end_sample = start_sample + (table_size * 2) as usize;
+            generate_frame_from_audio(
+                format!("{}{}.jpg", &cl_arguments.output, file_name).as_str(),
+                &samples[start_sample..end_sample],
+                table_size,
+                img_dimension,
+                img_dimension,
+                cl_arguments)?;
+        },
+        None => for i in 0..nr_frames {
+            if verbose { println!("generating frame {i}"); }
 
-        generate_frame_from_audio(
-            format!("frames/{}_{}.jpg", file_name, i).as_str(),
-            &samples[start_sample..end_sample],
-            table_size as usize,
-            width as usize,
-            height as usize,
-            cl_arguments)?;
+            // dividing by 2 for overlapping windows and multiplying by 2 for 2 interleaved audio
+            // channels cancels out here:
+            let start_sample = (table_size * i) as usize;
+
+            // ... here it does not, multiply by 2, for 2 audio channels
+            let end_sample = start_sample + (table_size * 2) as usize;
+            let img_dimension = ((table_size - 1) / 2) as usize;
+
+            generate_frame_from_audio(
+                format!("{}/{}_{}.jpg", &cl_arguments.output, file_name, i).as_str(),
+                &samples[start_sample..end_sample],
+                table_size as usize,
+                img_dimension,
+                img_dimension,
+                cl_arguments)?;
+        },
     }
 
     Ok(())
@@ -225,7 +259,7 @@ pub fn image_to_waves(file_path: &str, cl_arguments: &Cli) -> Result<(), Box<dyn
 
     // write wavetable to audio file
     write_to_wav(
-        format!("{}_{}.wav", file_name, table_len).as_str(),
+        format!("{}{}_{}.wav", &cl_arguments.output, file_name, table_len).as_str(),
         &wavetable,
         true,
         cl_arguments.plot_waveforms)?;
@@ -293,7 +327,7 @@ fn waveform_from_image_data(
     if cl_arguments.plot_spectra {
         // get magnitude of complex numbers and plot spectrogram
         let mag: Vec<f64> = get_magnitudes(&buffer);
-        let name = &format!("spectrum_{}.png", id);
+        let name = &format!("{}spectrum_{}.png", &cl_arguments.output, id);
         if let Err(_err) = plot_numbers(name, &mag) {
             println!("couldn't plt spectrum: {name}");
         }

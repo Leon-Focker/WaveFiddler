@@ -1,6 +1,14 @@
 use num_traits::{Num, pow};
 use rustfft::FftPlanner;
-use rustfft::num_complex::Complex;
+use rustfft::num_complex::Complex;use std::fs;
+use std::path::Path;
+
+/// Ensures the specified directory exists, creating it if necessary.
+pub fn ensure_directory_exists(dir: &str) -> std::io::Result<()> {
+    let path = Path::new(dir);
+    fs::create_dir_all(path)?;
+    Ok(())
+}
 
 /// Rescales a value from one range to another.
 ///
