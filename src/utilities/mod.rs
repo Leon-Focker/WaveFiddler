@@ -2,12 +2,38 @@ use num_traits::{Num, pow};
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;
 
-pub fn rescale<T: Copy + std::ops::Add<Output = T> + std::ops::Sub<Output = T> + std::ops::Div<Output = T>+ std::ops::Mul<Output = T>>
-(value: T, old_min: T, old_max: T, new_min: T, new_max: T) -> T {
+/// Rescales a value from one range to another.
+///
+/// This function maps a `value` from the range `[old_min, old_max]` to a new range `[new_min, new_max]`.
+///
+/// # Parameters:
+/// - `value`: The value to be rescaled.
+/// - `old_min`: The minimum of the original range.
+/// - `old_max`: The maximum of the original range.
+/// - `new_min`: The minimum of the target range.
+/// - `new_max`: The maximum of the target range.
+///
+/// # Returns:
+/// The rescaled value within the new range.
+pub fn rescale<T>(value: T, old_min: T, old_max: T, new_min: T, new_max: T) -> T
+    where T: Copy + std::ops::Add<Output = T> + std::ops::Sub<Output = T> + std::ops::Div<Output = T>+ std::ops::Mul<Output = T>
+{
     (((value - old_min) / (old_max - old_min)) * (new_max - new_min)) + new_min
 }
 
 // copied from fft_2d because it is not a public function:
+/// Transposes a matrix represented as a flat 1D array in row-major order.
+///
+/// This function converts a matrix of size `height x width` (stored in a flat array) into its
+/// transpose, returning the transposed matrix as a new `Vec<T>`.
+///
+/// # Parameters:
+/// - `width`: Number of columns in the matrix.
+/// - `height`: Number of rows in the matrix.
+/// - `matrix`: The matrix data in row-major order.
+///
+/// # Returns:
+/// A `Vec<T>` representing the transposed matrix.
 pub fn transpose<T: Copy + Default>(width: usize, height: usize, matrix: &[T]) -> Vec<T> {
     let mut ind = 0;
     let mut ind_tr;
@@ -20,73 +46,42 @@ pub fn transpose<T: Copy + Default>(width: usize, height: usize, matrix: &[T]) -
             ind_tr += height;
         }
     }
+
     transposed
 }
 
-// take a 32x32 sub-image from an image buffer in row-major order.
-fn partial_image_32<T: Copy>(image_data: &[T], width: usize, height: usize, (start_x, start_y): (usize, usize)) -> Result<Vec<T>, ()> {
-    if start_x + 32 >= width || start_y + 32 >= height || width * height > image_data.len() {
-       return Err(())
-    }
-
-    let mut result = Vec::with_capacity(32 * 32);
-
-    // go through 32 rows
-    for y in start_y..(start_y + 32) {
-        let x = start_x + (y * width);
-        for pixel in image_data.iter().skip(x).take(32) {
-            result.push(*pixel)
-        }
-    };
-
-    Ok(result)
-}
-
-// split one image vector into a collection of image vectors
-pub fn _split_image<T: Copy>(image_data: &[T], width: usize, height: usize) -> Vec<Vec<T>> {
-    let mut result: Vec<Vec<T>> = Vec::new();
-    let per_row = width / 32;
-    let per_column = height / 32;
-
-    for x in 0..per_row {
-        for y in 0..per_column {
-            result.push(partial_image_32(image_data, width, height, (x * 32, y * 32)).unwrap())
-        }
-    }
-
-    result
-}
-
-// Take a vector representing a 2D Matrix in row major order and sum all the diagonals, starting
-// from the "top left" corner:
-// sum_diagonals(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], 4, 3) -> [1, 7, 18, 21, 19, 12]
-pub fn sum_diagonals<T>(input: &[T], width: usize, height: usize) -> Vec<T>
+/// Sums the diagonals of a 2D matrix (represented as a flat vector in row-major order).
+///
+/// This function computes the sum of the diagonals starting from the top-left corner and moving
+/// to the bottom-right, for a given matrix with specified width and height.
+///
+/// # Parameters:
+/// - `input`: A slice representing the matrix in row-major order.
+/// - `width`: The number of columns in the matrix.
+/// - `height`: The number of rows in the matrix.
+///
+/// # Returns:
+/// A `Vec<T>` containing the sums of each diagonal.
+///
+/// # Example:
+/// ```rust
+/// let matrix = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+/// let result = sum_matrix_diagonals(&matrix, 4, 3);
+/// assert_eq!(result, vec![1, 7, 18, 21, 19, 12]);
+/// ```
+pub fn sum_matrix_diagonals<T>(input: &[T], width: usize, height: usize) -> Vec<T>
     where T: Num + Copy + From<f64>
 {
     let number_of_diagonals = width + (height - 1);
-    // let nod_half: f64 = number_of_diagonals as f64 / 2.0;
-    // let max_diagonal_size = min(width, height);
     let mut result: Vec<T> = Vec::with_capacity(number_of_diagonals);
     let mut offset: isize = -1;
 
     for (i, val) in input.iter().enumerate() {
-        // position in result vector (index of diagonal)
         let i_row = i % width;
         if i_row == 0 { offset += 1 }
         let idx = i_row + offset as usize;
 
-        // the following code would be used to average all values in a diagonal, but we don't need that
-        /*
-        // how many numbers are in this diagonal?
-        // divide by this number to get the average after summing
-        let nums_in_diagonal: T = T::from(
-            if idx >= nod_half.floor() as usize {
-                nod_half.round() as usize - ((idx + 1) % (nod_half.floor() as usize + 1))
-            } else { 1 + idx }
-            .min(max_diagonal_size) as f64);
-            */
-
-        let value = *val;  //    / nums_in_diagonal;
+        let value = *val;
 
         if idx >= result.len() {
             result.push(value);
@@ -98,9 +93,37 @@ pub fn sum_diagonals<T>(input: &[T], width: usize, height: usize) -> Vec<T>
     result
 }
 
+/// Expands a row-major linear slice into overlapping diagonal windows.
+///
+/// Each output row represents a diagonal slice of the input matrix, starting from each row index.
+/// The diagonals maintain the original row order but shift right with increasing rows.
+///
+/// # Arguments
+///
+/// * `input` - A slice representing a matrix in row-major order.
+/// * `width` - The number of columns in the matrix.
+/// * `height` - The number of rows in the matrix.
+///
+/// # Returns
+///
+/// A `Vec<T>` containing overlapping diagonal windows extracted from the matrix.
+///
+/// # Example
+///
+/// ```
+/// let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+/// let result = linear_to_diagonals(&input, 4, 3);
+/// assert_eq!(result, vec![1.0, 2.0, 3.0, 4.0,
+///                         2.0, 3.0, 4.0, 5.0,
+///                         3.0, 4.0, 5.0, 6.0]);
+/// ```
 pub fn linear_to_diagonals<T>(input: &[T], width: usize, height: usize) -> Vec<T>
     where T: Num + Copy + From<f64>
 {
+    if input.len() < ((width + height) - 1) {
+        panic!("linear_to_diagonals: input too short for width and height!")
+    }
+
     let mut result: Vec<T> = Vec::with_capacity(width * height);
 
     for (offset, _) in (0..height).enumerate() {
@@ -113,12 +136,36 @@ pub fn linear_to_diagonals<T>(input: &[T], width: usize, height: usize) -> Vec<T
 
 }
 
-// If we also took the average, some tests for this would be:
-// assert_eq!(vec![1.0, 3.5, 6.0, 7.0, 9.5, 12.0], average_diagonals(&vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0], 4, 3));
-// assert_eq!(vec![1.0, 4.5, 5.5, 6.5, 7.5, 8.5, 12.0], average_diagonals(&vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0], 6, 2));
-// assert_eq!(vec![1.0, 3.0, 5.0, 8.0, 10.0, 12.0], average_diagonals(&vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0], 3, 4));
-// assert_eq!(vec![1.0, 4.0, 7.0, 8.0, 9.0, 12.0, 15.0], average_diagonals(&vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0], 5, 3));
-
+/// Performs downsampling in the frequency domain using FFT.
+///
+/// This function reduces the length of a complex signal by applying a forward FFT,
+/// truncating high-frequency components, and then performing an inverse FFT.
+/// It only downsamples when `new_length` is smaller than the original length,
+/// preventing unintended upsampling.
+///
+/// # Arguments
+///
+/// * `input` - A slice of complex numbers representing the signal.
+/// * `new_length` - The desired length after downsampling.
+///
+/// # Returns
+///
+/// A `Vec<Complex<f64>>` containing the downsampled signal.
+///
+/// # Notes
+///
+/// * The function applies a high-pass filter by truncating the frequency components.
+/// * If `new_length >= input.len()`, the function returns a copy of the input.
+///
+/// # Example
+///
+/// ```
+/// use rustfft::num_complex::Complex;
+///
+/// let signal = vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0), Complex::new(3.0, 0.0), Complex::new(4.0, 0.0)];
+/// let downsampled = downsampling(&signal, 2);
+/// assert_eq!(downsampled.len(), 2);
+/// ```
 pub fn downsampling(input: &[Complex<f64>], new_length: usize) -> Vec<Complex<f64>> {
     // only do work when new_length < current_length (because we don't want to upsample)
     if new_length >= input.len() { return input.to_vec() }
@@ -171,11 +218,71 @@ pub fn downsampling(input: &[Complex<f64>], new_length: usize) -> Vec<Complex<f6
     get_magnitudes(&mut buffer)
 }*/
 
+/// Computes the magnitudes of complex numbers.
+///
+/// Calculates the Euclidean magnitude (absolute value) for each complex number in the input slice.
+///
+/// # Arguments
+///
+/// * `input` - A slice of complex numbers.
+///
+/// # Returns
+///
+/// A `Vec<f64>` containing the magnitudes of the input values.
+///
+/// # Example
+///
+/// ```
+/// use rustfft::num_complex::Complex;
+///
+/// let input = vec![Complex::new(3.0, 4.0), Complex::new(1.0, 1.0)];
+/// let magnitudes = get_magnitudes(&input);
+/// assert_eq!(magnitudes, vec![5.0, (2.0f64).sqrt()]);
+/// ```
 pub fn get_magnitudes(input: &[Complex<f64>]) -> Vec<f64> {
     input.iter().map(|x| (pow(x.re, 2) + pow(x.im, 2)).sqrt()).collect()
 }
 
-// Todo implement properly
-pub fn f64_max(input: &[f64]) -> f64 {
+/// Returns the maximum absolute value from a slice of `f64` values.
+///
+/// Computes the maximum of the absolute values in the input slice.
+/// If the slice is empty, returns `0.0`.
+pub fn max_abs(input: &[f64]) -> f64 {
     input.iter().fold(0.0_f64, |a, &b| a.max(b.abs()))
 }
+
+// This is currently not needed but let's keep for now...
+/*
+// take a 32x32 sub-image from an image buffer in row-major order.
+fn partial_image_32<T: Copy>(image_data: &[T], width: usize, height: usize, (start_x, start_y): (usize, usize)) -> Result<Vec<T>, ()> {
+    if start_x + 32 >= width || start_y + 32 >= height || width * height > image_data.len() {
+       return Err(())
+    }
+
+    let mut result = Vec::with_capacity(32 * 32);
+
+    // go through 32 rows
+    for y in start_y..(start_y + 32) {
+        let x = start_x + (y * width);
+        for pixel in image_data.iter().skip(x).take(32) {
+            result.push(*pixel)
+        }
+    };
+
+    Ok(result)
+}
+
+// split one image vector into a collection of image vectors
+pub fn split_image<T: Copy>(image_data: &[T], width: usize, height: usize) -> Vec<Vec<T>> {
+    let mut result: Vec<Vec<T>> = Vec::new();
+    let per_row = width / 32;
+    let per_column = height / 32;
+
+    for x in 0..per_row {
+        for y in 0..per_column {
+            result.push(partial_image_32(image_data, width, height, (x * 32, y * 32)).unwrap())
+        }
+    }
+
+    result
+}*/
