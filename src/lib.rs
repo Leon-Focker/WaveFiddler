@@ -52,6 +52,10 @@ pub struct Cli {
     #[arg(long)]
     pub single_frame: Option<u64>,
 
+    /// How vibrant a generated image will be. Values between 0 and 5 work best.
+    #[arg(long, default_value_t = 3.0)]
+    vibrancy: f64,
+
     /// Print information about what's happening
     #[arg(short, long, default_value_t = false)]
     verbose: bool,
@@ -64,14 +68,12 @@ pub struct Cli {
     #[arg(long, default_value_t = false)]
     plot_spectra: bool,
 
-
 }
 
 //////////////////////////////////////////////////////////////////
 //                    Sound to Image                            //
 // ------------------------------------------------------------ //
 
-// TODO (nicht) normalisieren...
 /// Generate a sequence of images from the audio file data, specifics on how this data influences
 /// the visuals can be supplied with the cli argument.
 pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), Box<dyn std::error::Error>> {
@@ -82,6 +84,7 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
     let sample_rate = audio_spec.sample_rate;
     let nr_channels = audio_spec.channels;
     let frame_rate = cl_arguments.frame_rate as u32;
+
     // we double table_size, so the windows overlap
     let table_size = (sample_rate / frame_rate) * 2;
     let nr_frames = ((nr_samples / nr_channels as u32) / (table_size / 2)) - 1;
@@ -157,7 +160,7 @@ fn generate_frame_from_audio(
     table_len: usize,
     width: usize,
     height: usize,
-    _cl_arguments: &Cli)
+    cl_arguments: &Cli)
     -> Result<(), Box<dyn std::error::Error>>
 {
     // This will hold the colour values of all pixels
@@ -177,12 +180,15 @@ fn generate_frame_from_audio(
     let lum_vec2 = map_samples_into_2d(&right_channel, table_len);
     let lum_vec3 = map_samples_into_2d(&mid, table_len);
 
+    let lum_max = max_abs(&lum_vec1).max(max_abs(&lum_vec2)).max(max_abs(&lum_vec3))
+        / f64::powf(10.0, cl_arguments.vibrancy);
+
     // Fill pixel_data with pixels
     // TODO see above
     for ((r, g), b) in lum_vec1.iter().zip(lum_vec2).zip(lum_vec3) {
-        let r_val = (r * 255.0) as u8;
-        let g_val = (g * 255.0) as u8;
-        let b_val = (b * 255.0) as u8;
+        let r_val = ((r / lum_max) * 255.0) as u8;
+        let g_val = ((g / lum_max) * 255.0) as u8;
+        let b_val = ((b / lum_max) * 255.0) as u8;
         //let w_val = (w / samples4_max * 255.0) as u8;
         pixel_data.push(r_val.saturating_add(0));
         pixel_data.push(g_val.saturating_add(0));
