@@ -1,5 +1,5 @@
 use std::path::Path;
-use image_dft::*;
+use wavefiddler::*;
 use std::process;
 use clap::Parser;
 
