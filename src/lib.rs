@@ -14,9 +14,6 @@ mod from_to_image;
 pub mod utilities;
 
 /// Command-line arguments for the application.
-///
-/// Defines options for input file, frame rate, FFT window size, and verbosity.
-/// Additional options for image generation and audio processing are planned (TODO).
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 pub struct Cli {
@@ -35,17 +32,21 @@ pub struct Cli {
     #[arg(short, long, default_value_t = 24)]
     frame_rate: u8,
 
-    /// Window size of the fft
-    #[arg(short = 's', long, default_value_t = 512)]
+    /// Window size of the fft, if fft-size is 0, it is automatically set to a value for which
+    /// no downsampling of padding has to be applied (not necessarily a power of 2)
+    #[arg(short = 'F', long, default_value_t = 512)]
     fft_size: u32,
+
+    /// When true, try to retain the spectral envelope and stretch it to fit the fft-size.
+    /// Else use all harmonics as they are, and discard them, if there is too many.
+    #[arg(short = 's', long, default_value_t = false)]
+    stretch_spectrum: bool,
 
     // TODO which method for image generation
     // TODO decide how audio channels map to color
 
     // TODO select how many wavetables to generate
     // TODO method for audio generation
-
-    // TODO normalisieren an/aus (für wavetables und bilder)
 
     /// Generate a single frame instead of the entire image sequence.
     /// Specify the start sample, using the number of samples defined by --fft_size.
@@ -174,18 +175,16 @@ fn generate_frame_from_audio(
         .map(|chunk| chunk.iter().sum())
         .collect();
 
-    // TODO how do these generate a color, influenced by cl_arguments
-    // TODO normalize or bold colours?
-    let lum_vec1 = map_samples_into_2d(&left_channel, table_len);
-    let lum_vec2 = map_samples_into_2d(&right_channel, table_len);
-    let lum_vec3 = map_samples_into_2d(&mid, table_len);
+    let lum_vec_left = map_samples_into_2d(&left_channel, table_len);
+    let lum_vec_right = map_samples_into_2d(&right_channel, table_len);
+    let lum_vec_mid = map_samples_into_2d(&mid, table_len);
 
-    let lum_max = max_abs(&lum_vec1).max(max_abs(&lum_vec2)).max(max_abs(&lum_vec3))
+    let lum_max = max_abs(&lum_vec_left).max(max_abs(&lum_vec_right)).max(max_abs(&lum_vec_mid))
         / f64::powf(10.0, cl_arguments.vibrancy);
 
+    // TODO how is the rgb color influenced by cl_arguments?
     // Fill pixel_data with pixels
-    // TODO see above
-    for ((r, g), b) in lum_vec1.iter().zip(lum_vec2).zip(lum_vec3) {
+    for ((r, g), b) in lum_vec_left.iter().zip(lum_vec_right).zip(lum_vec_mid) {
         let r_val = ((r / lum_max) * 255.0) as u8;
         let g_val = ((g / lum_max) * 255.0) as u8;
         let b_val = ((b / lum_max) * 255.0) as u8;
@@ -238,6 +237,7 @@ fn map_samples_into_2d(samples: &[f64], table_len: usize) -> Vec<f64> {
     ifft_2d(width, height, &mut buffer);
 
     // Output of ifft_2d is transposed, transpose back and collect real part
+    // TODO maybe skip this (image is mirrored)
     transpose(width, height, &buffer)
         .iter()
         .map(|complex| complex.re )
@@ -252,6 +252,17 @@ fn map_samples_into_2d(samples: &[f64], table_len: usize) -> Vec<f64> {
 pub fn image_to_waves(file_path: &str, cl_arguments: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     let file_name = Path::new(file_path).file_stem().and_then(|s| s.to_str()).unwrap();
     let table_len = cl_arguments.fft_size.try_into().unwrap();
+
+    // Get output file name
+    let out_file_name: &str = match &cl_arguments.output_filename {
+        None => &format!("{}_{}.wav", file_name, table_len),
+        Some(string) => {
+            let ext = Path::new(string).extension().and_then(|s| s.to_str()).unwrap();
+            if !["wav"].contains(&ext) {
+                return Err("invalid output file extension when converting to a audio!".into());
+            } else { string }
+        },
+    };
 
     // Open image from disk as rgb
     let img = image::open(file_path)?.into_rgb8();
@@ -281,10 +292,13 @@ pub fn image_to_waves(file_path: &str, cl_arguments: &Cli) -> Result<(), Box<dyn
 
     // write wavetable to audio file
     write_to_wav(
-        format!("{}{}_{}.wav", &cl_arguments.output_dir, file_name, table_len).as_str(),
+        format!("{}{}", &cl_arguments.output_dir, out_file_name).as_str(),
         &wavetable,
         true,
-        cl_arguments.plot_waveforms)?;
+        if cl_arguments.plot_waveforms {
+            Some(format!("{}waveform.png", cl_arguments.output_dir))
+        } else { None }
+    )?;
 
     Ok(())
 }
@@ -317,7 +331,6 @@ fn waveform_from_image_data(
     -> Vec<f64> {
 
     if table_len == 0 { table_len = width + (height - 1)}
-    let norm_factor: f64 = 1.0 / ((width as f64 * height as f64).sqrt()); // TODO necessary?
 
     // Convert the image buffer to complex numbers to be able to compute the FFT.
     let mut img_buffer: Vec<Complex<f64>> = image_data
@@ -327,11 +340,6 @@ fn waveform_from_image_data(
 
     // apply 2D FFT
     fft_2d(width, height, &mut img_buffer);
-
-    // Normalize all values // TODO necessary?
-    for num in img_buffer.iter_mut() {
-        *num *= norm_factor;
-    }
 
     // remove DC offset
     img_buffer[0] = Complex::new(0.0, 0.0);
@@ -343,10 +351,23 @@ fn waveform_from_image_data(
     /* let mut img_buffer = transpose(width, height, &img_buffer); */
 
     // Group all related harmonics together (sum_diagonals)
-    // if necessary, reduce the buffer by downsampling.
-    let mut buffer: Vec<Complex<f64>> = downsampling(
-        &sum_matrix_diagonals(&img_buffer, width, height),
-        table_len);
+    let mut buffer: Vec<Complex<f64>> = sum_matrix_diagonals(&img_buffer, width, height);
+
+    // Different approaches to handling different buffer length / table length
+    if cl_arguments.stretch_spectrum {
+        // Stretch the buffer, so it fits the table length
+        buffer = resample(&buffer, table_len);
+    } else {
+        if buffer.len() > table_len {
+            // If the buffer holds more elements than the table needs, discard them
+            buffer.truncate(table_len);
+        } else {
+            // If table_len is bigger than the provided buffer, pad the buffer with 0.0s
+            for _ in 0..(table_len - buffer.len()) {
+                buffer.push(Complex::new(0.0, 0.0));
+            }
+        }
+    }
 
     // Maybe plot spectrum
     if cl_arguments.plot_spectra {
@@ -354,14 +375,7 @@ fn waveform_from_image_data(
         let mag: Vec<f64> = get_magnitudes(&buffer);
         let name = &format!("{}spectrum_{}.png", &cl_arguments.output_dir, id);
         if let Err(_err) = plot_numbers(name, &mag) {
-            println!("couldn't plt spectrum: {name}");
-        }
-    }
-
-    // If table_len is bigger than the provided buffer, pad the buffer with 0.0s
-    if table_len > buffer.len() {
-        for _ in 0..(table_len - buffer.len()) {
-            buffer.push(Complex::new(0.0, 0.0));
+            println!("couldn't plot spectrum: {name}");
         }
     }
 

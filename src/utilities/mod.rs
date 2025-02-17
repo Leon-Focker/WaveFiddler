@@ -144,41 +144,44 @@ pub fn linear_to_diagonals<T>(input: &[T], width: usize, height: usize) -> Vec<T
 
 }
 
-/// Performs downsampling in the frequency domain using FFT.
+/// Performs resampling in the frequency domain using FFT.
 ///
-/// This function reduces the length of a complex signal by applying a forward FFT,
-/// truncating high-frequency components, and then performing an inverse FFT.
-/// It only downsamples when `new_length` is smaller than the original length,
-/// preventing unintended upsampling.
+/// This function either downsamples or upsamples a complex signal by applying a forward FFT,
+/// adjusting the frequency components, and then performing an inverse FFT. If the new length is smaller
+/// than the original length, it performs downsampling; if the new length is larger, it performs upsampling.
 ///
 /// # Arguments
 ///
-/// * `input` - A slice of complex numbers representing the signal.
-/// * `new_length` - The desired length after downsampling.
+/// * input - A slice of complex numbers representing the signal.
+/// * new_length - The desired length after resampling.
 ///
 /// # Returns
 ///
-/// A `Vec<Complex<f64>>` containing the downsampled signal.
+/// A Vec<Complex<f64>> containing the resampled signal.
 ///
 /// # Notes
 ///
-/// * The function applies a high-pass filter by truncating the frequency components.
-/// * If `new_length >= input.len()`, the function returns a copy of the input.
+/// * The function adjusts the frequency components by truncating (for downsampling) or padding with zeros (for upsampling).
+/// * If new_length == input.len(), the function returns a copy of the input without modification.
 ///
 /// # Example
 ///
-/// ```
+/// ```rust
 /// use rustfft::num_complex::Complex;
 ///
 /// let signal = vec![Complex::new(1.0, 0.0), Complex::new(2.0, 0.0), Complex::new(3.0, 0.0), Complex::new(4.0, 0.0)];
-/// let downsampled = downsampling(&signal, 2);
+/// let downsampled = resample(&signal, 2);
 /// assert_eq!(downsampled.len(), 2);
+///
+/// let upsampled = resample(&signal, 8);
+/// assert_eq!(upsampled.len(), 8);
 /// ```
-pub fn downsampling(input: &[Complex<f64>], new_length: usize) -> Vec<Complex<f64>> {
-    // only do work when new_length < current_length (because we don't want to upsample)
-    if new_length >= input.len() { return input.to_vec() }
-
+pub fn resample(input: &[Complex<f64>], new_length: usize) -> Vec<Complex<f64>> {
     let current_length = input.len();
+
+    // when current length and new length are the same, do nothing
+    if new_length == input.len() { return input.to_vec() }
+
     let mut buffer: Vec<Complex<f64>> = input.to_vec();
 
     // FFT
@@ -186,8 +189,14 @@ pub fn downsampling(input: &[Complex<f64>], new_length: usize) -> Vec<Complex<f6
     let fft_for = planner_for.plan_fft_forward(current_length);
     fft_for.process(&mut buffer);
 
-    // highpass
-    buffer = buffer[0..new_length].to_vec();
+    // either highpass or pad with 0s
+    if current_length > new_length {
+        buffer = buffer[0..new_length].to_vec();
+    } else {
+        for _ in 0..(new_length - current_length) {
+            buffer.push(Complex::new(0.0, 0.0));
+        }
+    }
 
     // inverse FFT
     let mut planner_inv = FftPlanner::new();
@@ -196,35 +205,6 @@ pub fn downsampling(input: &[Complex<f64>], new_length: usize) -> Vec<Complex<f6
 
     buffer
 }
-
-// Same as above but for Vec<f64>
-/*pub fn downsampling(input: &mut [f64], new_length: usize) -> Vec<f64> {
-    // only do work when new_length < current_length (because we don't want to upsample)
-    if new_length >= input.len() { return input.to_vec() }
-
-    let current_length = input.len();
-
-    // Convert the input buffer to complex numbers to be able to compute the FFT.
-    let mut buffer: Vec<Complex<f64>> = input
-        .iter()
-        .map(|&val| Complex::new(val, 0.0))
-        .collect();
-
-    // FFT
-    let mut planner_for = FftPlanner::new();
-    let fft_for = planner_for.plan_fft_forward(current_length);
-    fft_for.process(&mut *buffer);
-
-    // highpass
-    buffer = buffer[0..new_length].to_vec();
-
-    // inverse FFT
-    let mut planner_inv = FftPlanner::new();
-    let fft_inv = planner_inv.plan_fft_inverse(new_length);
-    fft_inv.process(&mut *buffer);
-
-    get_magnitudes(&mut buffer)
-}*/
 
 /// Computes the magnitudes of complex numbers.
 ///

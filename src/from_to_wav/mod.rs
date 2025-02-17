@@ -1,10 +1,10 @@
 use hound::WavSpec;
-use crate::utilities::{max_abs, rescale};
+use crate::utilities::{max_abs};
 use crate::plot::plot_numbers;
 
 /// Write numbers from a vector into a .wav file. Numbers should be between -1.0 and 1.0,
 /// else, when normalize is true, they are rescaled to fit that range.
-pub fn write_to_wav (name: &str, data: &[f64], normalize: bool, plot_waveform: bool) -> Result<(), Box<dyn std::error::Error>>  {
+pub fn write_to_wav (name: &str, data: &[f64], normalize: bool, plot_waveform: Option<String>) -> Result<(), Box<dyn std::error::Error>>  {
 
     let spec = WavSpec {
         channels: 1,
@@ -25,8 +25,8 @@ pub fn write_to_wav (name: &str, data: &[f64], normalize: bool, plot_waveform: b
     };
 
     // plot waveform, if necessary, handle errors
-    if plot_waveform {
-        plot_numbers("waveform.png", data)?
+    if let Some(path) = plot_waveform {
+        plot_numbers(&path, data)?
     }
 
     // write .wav file, handle errors
