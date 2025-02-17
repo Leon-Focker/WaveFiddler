@@ -333,6 +333,9 @@ fn waveform_from_image_data(
         *num *= norm_factor;
     }
 
+    // remove DC offset
+    img_buffer[0] = Complex::new(0.0, 0.0);
+
     // Output of fft_2d is transposed. But since we sum all the diagonals anyway,
     // we don't necessarily need transpose the matrix back. If we were to transpose it,
     // it would be arranged as visualized here:

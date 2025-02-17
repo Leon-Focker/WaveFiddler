@@ -1,8 +1,7 @@
 use hound::WavSpec;
-use crate::utilities::rescale;
+use crate::utilities::{max_abs, rescale};
 use crate::plot::plot_numbers;
 
-// TODO normalize should use the max of absolute numbers
 /// Write numbers from a vector into a .wav file. Numbers should be between -1.0 and 1.0,
 /// else, when normalize is true, they are rescaled to fit that range.
 pub fn write_to_wav (name: &str, data: &[f64], normalize: bool, plot_waveform: bool) -> Result<(), Box<dyn std::error::Error>>  {
@@ -18,10 +17,9 @@ pub fn write_to_wav (name: &str, data: &[f64], normalize: bool, plot_waveform: b
 
     // normalize if necessary
     let samples: Vec<f64> =  if normalize {
-        let max = data.iter().fold(0.0, |a: f64, &b| a.max(b.abs()));
-        let min = data.iter().fold(f64::INFINITY, |a: f64, &b| a.min(b.abs()));
+        let y_max = max_abs(&data);
 
-        data.iter().map(|x| rescale(*x, min, max, -(i16::MAX as f64), i16::MAX as f64)).collect()
+        data.iter().map(|x| (*x / y_max) * i16::MAX as f64).collect()
     } else {
         data.iter().map(|x| x * i16::MAX as f64).collect()
     };
