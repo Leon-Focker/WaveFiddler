@@ -23,10 +23,13 @@ pub struct Cli {
     /// Path to the input file
     pub input: Option<String>,
 
-    // TODO lib name in standard dir name
     /// Path to the output directory, will be created if it does not exist.
-    #[arg(short, long, default_value_t = String::from("./image_dft_outputs/"))]
-    pub output: String,
+    #[arg(short, long, default_value_t = String::from("./wavefiddler_outputs/"))]
+    pub output_dir: String,
+
+    /// Name of the output file. When converting to an image, valid extensions are .png and .jpg
+    #[arg(long)]
+    pub output_filename: Option<String>,
 
     /// The framerate that is used to generate an image sequence
     #[arg(short, long, default_value_t = 24)]
@@ -60,6 +63,8 @@ pub struct Cli {
     /// Plot the spectra of the generated waveforms
     #[arg(long, default_value_t = false)]
     plot_spectra: bool,
+
+
 }
 
 //////////////////////////////////////////////////////////////////
@@ -83,8 +88,19 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
     let verbose = cl_arguments.verbose;
 
     // make sure the output directory exists
-    ensure_directory_exists(&cl_arguments.output)
+    ensure_directory_exists(&cl_arguments.output_dir)
         .expect("something went wrong while checking for the output directory");
+
+    // Get output file name
+    let out_file_name: &str = match &cl_arguments.output_filename {
+        None => &format!("{}.jpg", file_name),
+        Some(string) => {
+            let ext = Path::new(string).extension().and_then(|s| s.to_str()).unwrap();
+            if !["jpg", "png"].contains(&ext) {
+            return Err("invalid output file extension when converting to an image!".into());
+            } else { string }
+        },
+    };
 
     // Make sure a stereo sound file ist used!
     if nr_channels != 2 {
@@ -103,7 +119,7 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
             let img_dimension = (table_size - 1) / 2;
 
             generate_frame_from_audio(
-                format!("{}{}.jpg", &cl_arguments.output, file_name).as_str(),
+                format!("{}{}", &cl_arguments.output_dir, out_file_name).as_str(),
                 &samples[start_sample..end_sample],
                 table_size,
                 img_dimension,
@@ -122,7 +138,7 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
             let img_dimension = ((table_size - 1) / 2) as usize;
 
             generate_frame_from_audio(
-                format!("{}/{}_{}.jpg", &cl_arguments.output, file_name, i).as_str(),
+                format!("{}{}_{}", &cl_arguments.output_dir, i, out_file_name).as_str(),
                 &samples[start_sample..end_sample],
                 table_size as usize,
                 img_dimension,
@@ -259,7 +275,7 @@ pub fn image_to_waves(file_path: &str, cl_arguments: &Cli) -> Result<(), Box<dyn
 
     // write wavetable to audio file
     write_to_wav(
-        format!("{}{}_{}.wav", &cl_arguments.output, file_name, table_len).as_str(),
+        format!("{}{}_{}.wav", &cl_arguments.output_dir, file_name, table_len).as_str(),
         &wavetable,
         true,
         cl_arguments.plot_waveforms)?;
@@ -327,7 +343,7 @@ fn waveform_from_image_data(
     if cl_arguments.plot_spectra {
         // get magnitude of complex numbers and plot spectrogram
         let mag: Vec<f64> = get_magnitudes(&buffer);
-        let name = &format!("{}spectrum_{}.png", &cl_arguments.output, id);
+        let name = &format!("{}spectrum_{}.png", &cl_arguments.output_dir, id);
         if let Err(_err) = plot_numbers(name, &mag) {
             println!("couldn't plt spectrum: {name}");
         }
