@@ -20,7 +20,7 @@ pub struct Cli {
     /// Path to the input file
     pub input: Option<String>,
 
-    /// Path to the output directory, will be created if it does not exist.
+    /// Path to the output directory. If it does not exist, it will be created.
     #[arg(short, long, default_value_t = String::from("./wavefiddler_outputs/"))]
     pub output_dir: String,
 
@@ -28,19 +28,19 @@ pub struct Cli {
     #[arg(short, long)]
     pub name: Option<String>,
 
-    /// Window size of the fft, if fft-size is 0, it is automatically set to a value for which
-    /// no downsampling of padding has to be applied (not necessarily a power of 2).
+    /// Window size of the fft. When generating a wavetable, this will be the length of the wavetable. If it is 0,
+    /// the fft-size is automatically set so that no downsampling or padding has to be applied (not necessarily a power of 2).
     /// When converting audio to an image, the fft-size is only relevant when generating a single frame,
     /// else it is set automatically. Setting it to 0 uses the entire .wav file (could be too long!).
     #[arg(short = 'f', long, default_value_t = 512)]
     fft_size: u32,
 
-    /// When true, try to retain the spectral envelope and stretch it to fit the fft-size.
-    /// Else use all harmonics as they are, and discard them, if there is too many.
-    #[arg(short = 's', long, default_value_t = false)]
+    /// For image->audio conversion. When true, try to retain the spectral envelope and stretch it to fit the fft-size.
+    /// Else use the spectrum as is, and discard harmonics, if there is too many.
+    #[arg(short = 'S', long, default_value_t = false)]
     stretch_spectrum: bool,
 
-    /// Image to audio conversion method. 0 => generate one frame. 1 => generate three frames from the rgb channels.
+    /// Image->audio conversion method. 0 => generate one frame. 1 => generate three frames from the rgb channels.
     /// 2 or higher => generate this many frames from a subset of the image spectrum.
     #[arg(short = 'i', long, default_value_t = 0)]
     pub i2a_method: u64,
@@ -50,11 +50,11 @@ pub struct Cli {
     frame_rate: u8,
 
     /// Generate a single frame instead of the entire image sequence.
-    /// Specify the start sample, this uses as many samples as defined by --fft_size.
-    #[arg(short = 'S', long)]
+    /// Specify the start sample with this argument. As many samples as defined by --fft_size wil be used.
+    #[arg(short = 's', long)]
     pub single_frame: Option<u64>,
 
-    /// Audio to image conversion method. 0 => simple diagonal map, 1 => diagonal map + inverse 2D fft,
+    /// Audio->image conversion method. 0 => simple diagonal map, 1 => diagonal map + inverse 2D fft,
     /// 2 => simple linear map (significantly smaller images!), 3 => linear map + inverse 2D fft,
     /// 4 => same as 2, but transposed (flip the matrix but don't swap width / height), 5 or higher => same as 3 but transposed.
     #[arg(short = 'a', long, default_value_t = 0)]
@@ -74,11 +74,11 @@ pub struct Cli {
     #[arg(long, default_value_t = false)]
     verbose: bool,
 
-    /// Plot the generated waveforms
+    /// For image->audio conversion. Plot the generated waveforms
     #[arg(long, default_value_t = false)]
     plot_waveforms: bool,
 
-    /// Plot the spectra of the generated waveforms
+    /// For image->audio conversion. Plot the spectra of the generated waveforms
     #[arg(long, default_value_t = false)]
     plot_spectra: bool,
 

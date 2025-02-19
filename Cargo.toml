@@ -11,4 +11,4 @@ plotters = "0.3.7"
 hound = "3.5.1"
 num-traits = "0.2.19"
 log = "0.4.25"
-clap = { version = "4.5.29", features = ["derive"] }
+clap = { version = "4.5.29", features=["derive","wrap_help"] }
