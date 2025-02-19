@@ -148,11 +148,11 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
 
             for i in 0..nr_frames {
                 // Progress information
-                if let Err(_) = print_progress_bar(
+                if print_progress_bar(
                     i as f32,
                     (nr_frames - 1) as f32,
                     50.0,
-                    cl_arguments.verbose) {
+                    cl_arguments.verbose).is_err() {
                     println!("Printing progress bar failed!");
                 }
 
@@ -164,7 +164,7 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
                 let end_sample = start_sample + (table_size * 2) as usize;
 
                 generate_frame_from_audio(
-                    format!("{}{}_{}", &cl_arguments.output_dir, i, out_file_name).as_str(),
+                    format!("{}{:05}_{}", &cl_arguments.output_dir, i, out_file_name).as_str(),
                     &samples[start_sample..end_sample],
                     nr_channels,
                     cl_arguments)?;
@@ -264,7 +264,7 @@ fn map_samples_into_2d(samples: &[f64], cl_arguments: &Cli) -> Vec<f64> {
     let fft = planner.plan_fft_forward(table_len);
     fft.process(&mut buffer);
 
-    return if cl_arguments.a2i_method < 2 {
+    if cl_arguments.a2i_method < 2 {
         let width = (table_len - 1) / 2;
         let height = width;
 
@@ -439,15 +439,14 @@ fn waveform_from_image_data(
     if cl_arguments.stretch_spectrum {
         // Stretch the buffer, so it fits the table length
         buffer = resample(&buffer, table_len);
+    } else if buffer.len() > table_len {
+        // If the buffer holds more elements than the table needs, discard them
+        buffer.truncate(table_len);
     } else {
-        if buffer.len() > table_len {
-            // If the buffer holds more elements than the table needs, discard them
-            buffer.truncate(table_len);
-        } else {
-            // If table_len is bigger than the provided buffer, pad the buffer with 0.0s
-            for _ in 0..(table_len - buffer.len()) {
-                buffer.push(Complex::new(0.0, 0.0));
-            }
+        // If table_len is bigger than the provided buffer, pad the buffer with 0.0s
+        for _ in 0..(table_len - buffer.len()) {
+            buffer.push(Complex::new(0.0, 0.0));
+
         }
     }
 
@@ -533,27 +532,25 @@ fn multiple_waveforms_from_image_data(
     // apply an inverse fft to all buffers in buffer_vec
     for (i, buffer) in buffer_vec.iter_mut().enumerate() {
         // Progress information
-        if let Err(_) = print_progress_bar(
+        if print_progress_bar(
             i as f32,
             (number_of_frames - 1) as f32,
             50.0,
-            cl_arguments.verbose) {
+            cl_arguments.verbose).is_err() {
             println!("Printing progress bar failed!");
         }
 
         // Different approaches to handling different buffer length / table length
         if cl_arguments.stretch_spectrum {
             // Stretch the buffer, so it fits the table length
-            *buffer = resample(&buffer, table_len);
+            *buffer = resample(buffer, table_len);
+        } else if buffer.len() > table_len {
+            // If the buffer holds more elements than the table needs, discard them
+            buffer.truncate(table_len);
         } else {
-            if buffer.len() > table_len {
-                // If the buffer holds more elements than the table needs, discard them
-                buffer.truncate(table_len);
-            } else {
-                // If table_len is bigger than the provided buffer, pad the buffer with 0.0s
-                for _ in 0..(table_len - buffer.len()) {
-                    buffer.push(Complex::new(0.0, 0.0));
-                }
+            // If table_len is bigger than the provided buffer, pad the buffer with 0.0s
+            for _ in 0..(table_len - buffer.len()) {
+                buffer.push(Complex::new(0.0, 0.0));
             }
         }
 

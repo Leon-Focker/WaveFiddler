@@ -314,11 +314,12 @@ pub fn max_abs(input: &[f64]) -> f64 {
 pub fn print_progress_bar(current: f32, total: f32, bar_length: f32, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
     let progress = current / total;
     let bar_progress = (progress * bar_length).floor() as usize;
-    let bar = "=".repeat(bar_progress) + &">" + &" ".repeat(bar_length as usize - bar_progress);
+    let bar = "=".repeat(bar_progress) + ">" + &" ".repeat(bar_length as usize - bar_progress);
 
     // Move cursor up one line and clear it (to reprint the progress bar):
+    // (This approach only works in terminals that support ANSI escape characters (basically: not windoze...),
+    // but I cannot be bothered to do this a different way (tried and failed...))
     print!("\x1b[1A\x1b[2K");
-    io::stdout().flush().unwrap(); // flush io stream
 
     // Print progress
     if verbose { println!("generating frame {current}"); }
