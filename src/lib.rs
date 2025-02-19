@@ -102,7 +102,6 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
     // we double table_size, so the windows overlap
     let table_size = (sample_rate / frame_rate) * 2;
     let nr_frames = ((nr_samples / nr_channels as u32) / (table_size / 2)) - 1;
-    let verbose = cl_arguments.verbose;
 
     // make sure the output directory exists
     ensure_directory_exists(&cl_arguments.output_dir)
@@ -127,7 +126,8 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
     // Generate all frames
     match cl_arguments.single_frame {
         Some(sample_idx) => {
-            if verbose { println!("generating frame..."); }
+            // Information for the user
+            println!("Generating an image from audio...");
 
             // multiply by 2 (stereo file)
             let start_sample = (sample_idx * 2) as usize;
@@ -140,20 +140,33 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
                 &samples[start_sample..end_sample],
                 cl_arguments)?;
         },
-        None => for i in 0..nr_frames {
-            if verbose { println!("generating frame {i}"); }
+        None => {
+            // Information for the User
+            println!("Generating an image sequence from audio...");
+            println!(); // This will immediately be replaced by the progress bar
 
-            // dividing by 2 for overlapping windows and multiplying by 2 for 2 interleaved audio
-            // channels cancels out here:
-            let start_sample = (table_size * i) as usize;
+            for i in 0..nr_frames {
+                // Progress information
+                if let Err(_) = print_progress_bar(
+                    i as f32,
+                    (nr_frames - 1) as f32,
+                    50.0,
+                    cl_arguments.verbose) {
+                    println!("Printing progress bar failed!");
+                }
 
-            // ... here it does not, multiply by 2, for 2 audio channels
-            let end_sample = start_sample + (table_size * 2) as usize;
+                // dividing by 2 for overlapping windows and multiplying by 2 for 2 interleaved audio
+                // channels cancels out here:
+                let start_sample = (table_size * i) as usize;
 
-            generate_frame_from_audio(
-                format!("{}{}_{}", &cl_arguments.output_dir, i, out_file_name).as_str(),
-                &samples[start_sample..end_sample],
-                cl_arguments)?;
+                // ... here it does not, multiply by 2, for 2 audio channels
+                let end_sample = start_sample + (table_size * 2) as usize;
+
+                generate_frame_from_audio(
+                    format!("{}{}_{}", &cl_arguments.output_dir, i, out_file_name).as_str(),
+                    &samples[start_sample..end_sample],
+                    cl_arguments)?;
+            }
         },
     }
 
@@ -307,6 +320,9 @@ pub fn image_to_waves(file_path: &str, cl_arguments: &Cli) -> Result<(), Box<dyn
 
     // Different methods for generating the audio data
     if cl_arguments.i2a_method == 1 {
+        // Information for the User
+        println!("Generating audio from the rgb data of an image...");
+
         // Open image from disk as rgb
         let img = image::open(file_path)?.into_rgb8();
         let (width, height) = img.dimensions();
@@ -329,6 +345,9 @@ pub fn image_to_waves(file_path: &str, cl_arguments: &Cli) -> Result<(), Box<dyn
         audio_data.append(&mut waveform_from_image_data(g_vector, width as usize, height as usize, table_len, cl_arguments, "b"));
 
     } else {
+        // Information for the User
+        println!("audio from a greyscale image...");
+
         // Open image from disk as greyscale
         let img = image::open(file_path)?.into_luma8();
         let (width, height) = img.dimensions();
@@ -488,18 +507,28 @@ fn multiple_waveforms_from_image_data(
     let mut result: Vec<f64> = Vec::with_capacity(table_len * number_of_frames);
 
     // panic, because this call should never produce an error caused by user input...
-    let mut buffer_vec: Vec<Vec<Complex<f64>>> = get_matrix_rays(&img_buffer, width, height, number_of_frames)
+    let mut buffer_vec: Vec<Vec<Complex<f64>>> =
+        get_matrix_rays(&img_buffer, width, height, number_of_frames)
         .unwrap_or_else(|_err| {
             panic!("getting matrix rays went wrong!");
         });
-
 
     // plan the inverse fft
     let mut planner = FftPlanner::new();
     let fft = planner.plan_fft_inverse(table_len);
 
+    println!(); // This will immediately be replaced by the progress bar
+
     // apply an inverse fft to all buffers in buffer_vec
-    for buffer in buffer_vec.iter_mut() {
+    for (i, buffer) in buffer_vec.iter_mut().enumerate() {
+        // Progress information
+        if let Err(_) = print_progress_bar(
+            i as f32,
+            (number_of_frames - 1) as f32,
+            50.0,
+            cl_arguments.verbose) {
+            println!("Printing progress bar failed!");
+        }
 
         // Different approaches to handling different buffer length / table length
         if cl_arguments.stretch_spectrum {

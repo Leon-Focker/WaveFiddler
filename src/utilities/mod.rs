@@ -3,6 +3,7 @@ use num_traits::{Num, pow};
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;use std::fs;
 use std::path::Path;
+use std::io::{self, Write};
 
 /// Ensures the specified directory exists, creating it if necessary.
 pub fn ensure_directory_exists(dir: &str) -> std::io::Result<()> {
@@ -297,3 +298,32 @@ pub fn max_abs(input: &[f64]) -> f64 {
     input.iter().fold(0.0_f64, |a, &b| a.max(b.abs()))
 }
 
+/// Prints a dynamic progress bar to the console.
+///
+/// # Arguments
+/// * `current` - The current progress value.
+/// * `total` - The total value to reach completion.
+/// * `bar_length` - The length of the progress bar in characters.
+/// * `verbose` - If `true`, prints additional progress information.
+///
+/// # Returns
+/// * `Ok(())` on success, or an error if printing fails.
+///
+/// The function clears and redraws the progress bar on the same console line.
+/// Uses ANSI escape codes, so terminal support is required.
+pub fn print_progress_bar(current: f32, total: f32, bar_length: f32, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let progress = current / total;
+    let bar_progress = (progress * bar_length).floor() as usize;
+    let bar = "=".repeat(bar_progress) + &">" + &" ".repeat(bar_length as usize - bar_progress);
+
+    // Move cursor up one line and clear it (to reprint the progress bar):
+    print!("\x1b[1A\x1b[2K");
+    io::stdout().flush().unwrap(); // flush io stream
+
+    // Print progress
+    if verbose { println!("generating frame {current}"); }
+    println!("\r[{}] {:.0}%", bar, progress * 100.0);
+    io::stdout().flush().unwrap();
+
+    Ok(())
+}
