@@ -297,38 +297,3 @@ pub fn max_abs(input: &[f64]) -> f64 {
     input.iter().fold(0.0_f64, |a, &b| a.max(b.abs()))
 }
 
-// This is currently not needed but let's keep for now...
-/*
-// take a 32x32 sub-image from an image buffer in row-major order.
-fn partial_image_32<T: Copy>(image_data: &[T], width: usize, height: usize, (start_x, start_y): (usize, usize)) -> Result<Vec<T>, ()> {
-    if start_x + 32 >= width || start_y + 32 >= height || width * height > image_data.len() {
-       return Err(())
-    }
-
-    let mut result = Vec::with_capacity(32 * 32);
-
-    // go through 32 rows
-    for y in start_y..(start_y + 32) {
-        let x = start_x + (y * width);
-        for pixel in image_data.iter().skip(x).take(32) {
-            result.push(*pixel)
-        }
-    };
-
-    Ok(result)
-}
-
-// split one image vector into a collection of image vectors
-pub fn split_image<T: Copy>(image_data: &[T], width: usize, height: usize) -> Vec<Vec<T>> {
-    let mut result: Vec<Vec<T>> = Vec::new();
-    let per_row = width / 32;
-    let per_column = height / 32;
-
-    for x in 0..per_row {
-        for y in 0..per_column {
-            result.push(partial_image_32(image_data, width, height, (x * 32, y * 32)).unwrap())
-        }
-    }
-
-    result
-}*/
