@@ -24,7 +24,7 @@ pub struct Cli {
     #[arg(short, long, default_value_t = String::from("./wavefiddler_outputs/"))]
     pub output_dir: String,
 
-    /// Name of the output file. When converting to an image, valid extensions are .png and .jpg
+    /// Name of the output file. Valid file extensions are .wav, .png and .jpg
     #[arg(long)]
     pub output_filename: Option<String>,
 
@@ -45,8 +45,10 @@ pub struct Cli {
     // TODO which method for image generation
     // TODO decide how audio channels map to color
 
-    // TODO select how many wavetables to generate
-    // TODO method for audio generation
+    /// image to audio conversion method. 0 => generate one frame. 1 => generate three frames from the rgb channels.
+    /// 2 or higher => generate this many frames from a subset of the image spectrum.
+    #[arg(short = 'a', long, default_value_t = 0)]
+    pub i2a_method: u64,
 
     /// Generate a single frame instead of the entire image sequence.
     /// Specify the start sample, using the number of samples defined by --fft_size.
@@ -252,6 +254,14 @@ fn map_samples_into_2d(samples: &[f64], table_len: usize) -> Vec<f64> {
 pub fn image_to_waves(file_path: &str, cl_arguments: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     let file_name = Path::new(file_path).file_stem().and_then(|s| s.to_str()).unwrap();
     let table_len = cl_arguments.fft_size.try_into().unwrap();
+    let audio_data_len = match cl_arguments.i2a_method {
+        0 => table_len,
+        1 => table_len * 3,
+        _ => table_len * cl_arguments.i2a_method as usize,
+    };
+
+    // store the generated audio data here
+    let mut audio_data = Vec::with_capacity(audio_data_len);
 
     // Get output file name
     let out_file_name: &str = match &cl_arguments.output_filename {
@@ -264,36 +274,48 @@ pub fn image_to_waves(file_path: &str, cl_arguments: &Cli) -> Result<(), Box<dyn
         },
     };
 
-    // Open image from disk as rgb
-    let img = image::open(file_path)?.into_rgb8();
-    let (width, height) = img.dimensions();
+    // Different methods for generating the audio data
+    if cl_arguments.i2a_method == 1 {
+        // Open image from disk as rgb
+        let img = image::open(file_path)?.into_rgb8();
+        let (width, height) = img.dimensions();
 
-    // Save the pixel_data into respective vectors
-    let color_vec_len = img.len() / 3;
-    let mut r_vector = Vec::with_capacity(color_vec_len);
-    let mut g_vector = Vec::with_capacity(color_vec_len);
-    let mut b_vector = Vec::with_capacity(color_vec_len);
+        // Save the pixel_data into respective vectors
+        let color_vec_len = img.len() / 3;
+        let mut r_vector = Vec::with_capacity(color_vec_len);
+        let mut g_vector = Vec::with_capacity(color_vec_len);
+        let mut b_vector = Vec::with_capacity(color_vec_len);
 
-    for pixel in img.as_raw().chunks_exact(3) {
-        r_vector.push(pixel[0]);
-        g_vector.push(pixel[1]);
-        b_vector.push(pixel[2]);
+        for pixel in img.as_raw().chunks_exact(3) {
+            r_vector.push(pixel[0]);
+            g_vector.push(pixel[1]);
+            b_vector.push(pixel[2]);
+        }
+
+        // get a wavetable (1D Vector of f64) from the image data (2D Vector of f64) for each rgb channel
+        audio_data.append(&mut waveform_from_image_data(r_vector, width as usize, height as usize, table_len, cl_arguments, "r"));
+        audio_data.append(&mut waveform_from_image_data(b_vector, width as usize, height as usize, table_len, cl_arguments, "g"));
+        audio_data.append(&mut waveform_from_image_data(g_vector, width as usize, height as usize, table_len, cl_arguments, "b"));
+
+    } else {
+        // Open image from disk as greyscale
+        let img = image::open(file_path)?.into_luma8();
+        let (width, height) = img.dimensions();
+        let pixel_data = img.as_raw().clone();
+
+        if cl_arguments.i2a_method == 0 {
+            // get a wavetable (1D Vector of f64) from the image data (2D Vector of f64) for grey scale image
+            audio_data = waveform_from_image_data(pixel_data, width as usize, height as usize, table_len, cl_arguments, "grey")
+        } else {
+            // get a multiple wavetables (1D Vector of f64) from the image data (2D Vector of f64) for grey scale image
+            audio_data = multiple_waveforms_from_image_data(pixel_data, width as usize, height as usize, table_len, cl_arguments, cl_arguments.i2a_method as usize)
+        }
     }
 
-    // Generate the Wavetable
-    // TODO decide via cl_arguments, whether to generate one wavetable frame or several
-    // TODO Method to generate wavetables.
-    let mut wavetable = Vec::with_capacity(table_len * 3);
-
-    // get a wavetable (1D Vector of f64) from the image data (2D Vector of f64)
-    wavetable.append(&mut waveform_from_image_data(r_vector, width as usize, height as usize, table_len, cl_arguments, 1));
-    wavetable.append(&mut waveform_from_image_data(b_vector, width as usize, height as usize, table_len, cl_arguments, 2));
-    wavetable.append(&mut waveform_from_image_data(g_vector, width as usize, height as usize, table_len, cl_arguments, 3));
-
-    // write wavetable to audio file
+    // write audio_data to audio file
     write_to_wav(
         format!("{}{}", &cl_arguments.output_dir, out_file_name).as_str(),
-        &wavetable,
+        &audio_data,
         true,
         if cl_arguments.plot_waveforms {
             Some(format!("{}waveform.png", cl_arguments.output_dir))
@@ -306,7 +328,7 @@ pub fn image_to_waves(file_path: &str, cl_arguments: &Cli) -> Result<(), Box<dyn
 /// Generates a waveform from image data using 2D FFT.
 ///
 /// This function converts image pixel values to complex numbers, applies a 2D FFT,
-/// normalizes the result, sums the diagonals, downsamples if necessary, and applies
+/// sums the diagonals, resamples if necessary, and applies
 /// an inverse FFT to generate a 1D waveform.
 ///
 /// # Arguments
@@ -327,7 +349,7 @@ fn waveform_from_image_data(
     height: usize,
     mut table_len: usize,
     cl_arguments: &Cli,
-    id: u8)
+    id: &str)
     -> Vec<f64> {
 
     if table_len == 0 { table_len = width + (height - 1)}
@@ -350,7 +372,6 @@ fn waveform_from_image_data(
     // https://dsp.stackexchange.com/questions/3511/harmonics-in-2-d-fft-signal
     /* let mut img_buffer = transpose(width, height, &img_buffer); */
 
-    // Group all related harmonics together (sum_diagonals)
     let mut buffer: Vec<Complex<f64>> = sum_matrix_diagonals(&img_buffer, width, height);
 
     // Different approaches to handling different buffer length / table length
@@ -386,4 +407,92 @@ fn waveform_from_image_data(
 
     // use only the real part as wavetable
     buffer.into_iter().map(|x| x.re).collect()
+}
+
+/// Generates multiple waveforms from image data using 2D FFT.
+///
+/// This function converts image pixel values to complex numbers, applies a 2D FFT,
+/// removes the DC offset, and splits the result into a number of diagonals through the 2D matrix.
+/// Apply a 1D inverse FFT to each of those diagonals and append them to one audio_data Vector.
+///
+/// # Arguments
+///
+/// * `image_data` - A vector of pixel values (0-255) from the image.
+/// * `width` - The width of the image.
+/// * `height` - The height of the image.
+/// * `table_len` - The desired length of the resulting waveform.
+/// * `cl_arguments` - Command-line arguments for additional options (e.g., plotting).
+/// * `number_of_frames` - The number of waveforms to generate.
+///
+/// # Returns
+///
+/// A vector of `f64` values representing the generated waveform. Length = table_size * number_of_frames.
+fn multiple_waveforms_from_image_data(
+    image_data: Vec<u8>,
+    width: usize,
+    height: usize,
+    mut table_len: usize,
+    cl_arguments: &Cli,
+    number_of_frames: usize)
+    -> Vec<f64> {
+
+    if table_len == 0 { table_len = width + (height - 1)}
+
+    // Convert the image buffer to complex numbers to be able to compute the FFT.
+    let mut img_buffer: Vec<Complex<f64>> = image_data
+        .iter()
+        .map(|&pix| Complex::new(pix as f64 / 255.0, 0.0))
+        .collect();
+
+    // apply 2D FFT
+    fft_2d(width, height, &mut img_buffer);
+
+    // remove DC offset
+    img_buffer[0] = Complex::new(0.0, 0.0);
+
+    // Output of fft_2d is transposed.Transpose it back to be arranged as depicted here:
+    // https://dsp.stackexchange.com/questions/3511/harmonics-in-2-d-fft-signal
+    img_buffer = transpose(width, height, &img_buffer);
+
+    let mut result: Vec<f64> = Vec::with_capacity(table_len * number_of_frames);
+
+    // panic, because this call should never produce an error caused by user input...
+    let mut buffer_vec: Vec<Vec<Complex<f64>>> = get_matrix_rays(&img_buffer, width, height, number_of_frames)
+        .unwrap_or_else(|_err| {
+            panic!("getting matrix rays went wrong!");
+        });
+
+
+    // plan the inverse fft
+    let mut planner = FftPlanner::new();
+    let fft = planner.plan_fft_inverse(table_len);
+
+    // apply an inverse fft to all buffers in buffer_vec
+    for buffer in buffer_vec.iter_mut() {
+
+        // Different approaches to handling different buffer length / table length
+        if cl_arguments.stretch_spectrum {
+            // Stretch the buffer, so it fits the table length
+            *buffer = resample(&buffer, table_len);
+        } else {
+            if buffer.len() > table_len {
+                // If the buffer holds more elements than the table needs, discard them
+                buffer.truncate(table_len);
+            } else {
+                // If table_len is bigger than the provided buffer, pad the buffer with 0.0s
+                for _ in 0..(table_len - buffer.len()) {
+                    buffer.push(Complex::new(0.0, 0.0));
+                }
+            }
+        }
+
+        // apply the inverse fft (one-dimensional)
+        fft.process(buffer);
+
+        // use only the real part as wavetable
+        result.append(&mut buffer.iter().map(|x| x.re).collect::<Vec<f64>>());
+
+    }
+
+    result
 }

@@ -1,3 +1,4 @@
+use std::cmp::min;
 use num_traits::{Num, pow};
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex;use std::fs;
@@ -99,6 +100,63 @@ pub fn sum_matrix_diagonals<T>(input: &[T], width: usize, height: usize) -> Vec<
     }
 
     result
+}
+
+/// Computes `nr_rays` diagonal rays from a 2D matrix represented as a 1D slice.
+///
+/// # Parameters
+/// - `input`: A reference to a 1D slice representing the matrix.
+/// - `width`: The number of columns in the matrix.
+/// - `height`: The number of rows in the matrix.
+/// - `nr_rays`: The number of rays to compute (must be at least 2).
+///
+/// # Returns
+/// A `Result` containing a vector of `nr_rays` rays, where each ray is a vector of elements from `input`.
+///
+/// # Example:
+/// ```rust
+/// let matrix: Vec<usize> = (1..=20).collect();
+/// let result = get_matrix_rays(&matrix, 4, 3, 5).unwrap();
+/// assert_eq!(result, vec![[1, 5, 9], [1, 6, 10], [1, 6, 11], [1, 6, 7], [1, 2, 3]]);
+/// ```
+///
+/// # Errors
+/// Returns an error if `nr_rays` is less than 2.
+///
+/// # Panics
+/// May panic if `input` is not large enough for the given `width` and `height`.
+pub fn get_matrix_rays<T: Copy>(input: &[T], width: usize, height: usize, nr_rays: usize) -> Result<Vec<Vec<T>>, Box<dyn std::error::Error>> {
+    let mut result = Vec::with_capacity(nr_rays);
+    let ray_length = min(width, height);
+
+    if nr_rays < 2 {
+        return Err("get_matrix_rays needs nr_rays to be at least 2".into())
+    }
+
+    for i in 0..nr_rays {
+        let mut ray = Vec::with_capacity(ray_length);
+        let progress = i as f64 / (nr_rays - 1) as f64;
+
+        if progress <= 0.5 {
+            for k in 0..ray_length {
+                let x = (k as f64 * progress * 2.0).round() as usize;
+                let y = k;
+                let idx = (y * width) + x;
+                ray.push(input[idx]);
+            }
+        } else {
+            for k in 0..ray_length {
+                let x = k;
+                let y = (k as f64 * (1.0 - ((progress - 0.5) * 2.0))).round() as usize;
+                let idx = (y * width) + x;
+                ray.push(input[idx]);
+            }
+        }
+
+        result.push(ray);
+    }
+
+    Ok(result)
 }
 
 /// Expands a row-major linear slice into overlapping diagonal windows.
