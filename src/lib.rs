@@ -25,16 +25,12 @@ pub struct Cli {
     pub output_dir: String,
 
     /// Name of the output file. Valid file extensions are .wav, .png and .jpg
-    #[arg(long)]
-    pub output_filename: Option<String>,
+    #[arg(short, long)]
+    pub name: Option<String>,
 
-    /// The framerate that is used to generate an image sequence
-    #[arg(short, long, default_value_t = 24)]
-    frame_rate: u8,
-
-    /// Window size of the fft, if fft-size is 0, it is automatically set to a value for which
+        /// Window size of the fft, if fft-size is 0, it is automatically set to a value for which
     /// no downsampling of padding has to be applied (not necessarily a power of 2)
-    #[arg(short = 'F', long, default_value_t = 512)]
+    #[arg(short = 'f', long, default_value_t = 512)]
     fft_size: u32,
 
     /// When true, try to retain the spectral envelope and stretch it to fit the fft-size.
@@ -42,25 +38,36 @@ pub struct Cli {
     #[arg(short = 's', long, default_value_t = false)]
     stretch_spectrum: bool,
 
-    // TODO which method for image generation
-    // TODO decide how audio channels map to color
-
     /// image to audio conversion method. 0 => generate one frame. 1 => generate three frames from the rgb channels.
     /// 2 or higher => generate this many frames from a subset of the image spectrum.
-    #[arg(short = 'a', long, default_value_t = 0)]
+    #[arg(short = 'i', long, default_value_t = 0)]
     pub i2a_method: u64,
+
+    /// The framerate that is used to generate an image sequence
+    #[arg(short = 'F', long, default_value_t = 24)]
+    frame_rate: u8,
 
     /// Generate a single frame instead of the entire image sequence.
     /// Specify the start sample, using the number of samples defined by --fft_size.
-    #[arg(long)]
+    #[arg(short = 'S', long)]
     pub single_frame: Option<u64>,
 
+    /// audio to image conversion method. // TODO
+    #[arg(short = 'a', long, default_value_t = 0)]
+    pub a2i_method: u64,
+
+    /// How the left and right channel of the .wav file influence the color of the generated image.
+    /// This argument must be a list of 6 numbers, which create color like this:
+    /// red = left * nr1 + right * nr2, green = left * nr3 + right * nr4, blue = left * nr5 + right * nr6
+    #[arg(short, long, default_value_t = String::from("1,0,0,1,0.5,0.5"))]
+    color_map: String,
+
     /// How vibrant a generated image will be. Values between 0 and 5 work best.
-    #[arg(long, default_value_t = 3.0)]
+    #[arg(short = 'v', long, default_value_t = 3.0)]
     vibrancy: f64,
 
     /// Print information about what's happening
-    #[arg(short, long, default_value_t = false)]
+    #[arg(long, default_value_t = false)]
     verbose: bool,
 
     /// Plot the generated waveforms
@@ -98,7 +105,7 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
         .expect("something went wrong while checking for the output directory");
 
     // Get output file name
-    let out_file_name: &str = match &cl_arguments.output_filename {
+    let out_file_name: &str = match &cl_arguments.name {
         None => &format!("{}.jpg", file_name),
         Some(string) => {
             let ext = Path::new(string).extension().and_then(|s| s.to_str()).unwrap();
@@ -183,17 +190,23 @@ fn generate_frame_from_audio(
 
     let lum_max = max_abs(&lum_vec_left).max(max_abs(&lum_vec_right)).max(max_abs(&lum_vec_mid))
         / f64::powf(10.0, cl_arguments.vibrancy);
+    let scale = 255.0 / lum_max;
 
-    // TODO how is the rgb color influenced by cl_arguments?
+    let color_mult: [f64; 6] = cl_arguments
+        .color_map
+        .split(',')
+        .map(|x| x.parse::<f64>().unwrap_or(0.0))
+        .collect::<Vec<f64>>()
+        .try_into()
+        .expect("Expected exactly 6 color multipliers");
+
     // Fill pixel_data with pixels
-    for ((r, g), b) in lum_vec_left.iter().zip(lum_vec_right).zip(lum_vec_mid) {
-        let r_val = ((r / lum_max) * 255.0) as u8;
-        let g_val = ((g / lum_max) * 255.0) as u8;
-        let b_val = ((b / lum_max) * 255.0) as u8;
-        //let w_val = (w / samples4_max * 255.0) as u8;
-        pixel_data.push(r_val.saturating_add(0));
-        pixel_data.push(g_val.saturating_add(0));
-        pixel_data.push(b_val.saturating_add(0));
+    for (&left, &right) in lum_vec_left.iter().zip(&lum_vec_right) {
+        let l = left * scale;
+        let r = right * scale;
+        pixel_data.push(((l * color_mult[0]) + (r * color_mult[1])) as u8);
+        pixel_data.push(((l * color_mult[2]) + (r * color_mult[3])) as u8);
+        pixel_data.push(((l * color_mult[4]) + (r * color_mult[5])) as u8);
     }
 
     write_to_image(name, &pixel_data, width, height)?;
@@ -264,7 +277,7 @@ pub fn image_to_waves(file_path: &str, cl_arguments: &Cli) -> Result<(), Box<dyn
     let mut audio_data = Vec::with_capacity(audio_data_len);
 
     // Get output file name
-    let out_file_name: &str = match &cl_arguments.output_filename {
+    let out_file_name: &str = match &cl_arguments.name {
         None => &format!("{}_{}.wav", file_name, table_len),
         Some(string) => {
             let ext = Path::new(string).extension().and_then(|s| s.to_str()).unwrap();
