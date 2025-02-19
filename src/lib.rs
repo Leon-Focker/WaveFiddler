@@ -119,8 +119,8 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
     };
 
     // Make sure a stereo sound file ist used!
-    if nr_channels != 2 {
-        return Err("please use an audio file with exactly 2 channels!".into());
+    if nr_channels > 2 {
+        return Err("please use an audio file with not more than 2 channels!".into());
     }
 
     // Generate all frames
@@ -138,6 +138,7 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
             generate_frame_from_audio(
                 format!("{}{}", &cl_arguments.output_dir, out_file_name).as_str(),
                 &samples[start_sample..end_sample],
+                nr_channels,
                 cl_arguments)?;
         },
         None => {
@@ -165,6 +166,7 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
                 generate_frame_from_audio(
                     format!("{}{}_{}", &cl_arguments.output_dir, i, out_file_name).as_str(),
                     &samples[start_sample..end_sample],
+                    nr_channels,
                     cl_arguments)?;
             }
         },
@@ -177,12 +179,21 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
 fn generate_frame_from_audio(
     name: &str,
     audio_data: &[f64],
+    audio_channels: u16,
     cl_arguments: &Cli)
     -> Result<(), Box<dyn std::error::Error>>
 {
     // get all samples of the respective channels
-    let left_channel: Vec<f64> = audio_data.iter().step_by(2).cloned().collect();
-    let right_channel: Vec<f64> = audio_data.iter().skip(1).step_by(2).cloned().collect();
+    let (left_channel, right_channel): (Vec<f64>, Vec<f64>) =
+        if audio_channels == 1 {
+            (audio_data.to_vec(), audio_data.to_vec())
+        } else {
+            (
+                audio_data.iter().step_by(2).cloned().collect(),
+                audio_data.iter().skip(1).step_by(2).cloned().collect(),
+            )
+        };
+
     // map those samples into 2D space
     let lum_vec_left = map_samples_into_2d(&left_channel, cl_arguments);
     let lum_vec_right = map_samples_into_2d(&right_channel, cl_arguments);
