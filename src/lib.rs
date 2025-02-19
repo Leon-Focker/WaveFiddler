@@ -28,8 +28,10 @@ pub struct Cli {
     #[arg(short, long)]
     pub name: Option<String>,
 
-        /// Window size of the fft, if fft-size is 0, it is automatically set to a value for which
-    /// no downsampling of padding has to be applied (not necessarily a power of 2)
+    /// Window size of the fft, if fft-size is 0, it is automatically set to a value for which
+    /// no downsampling of padding has to be applied (not necessarily a power of 2).
+    /// When converting audio to an image, the fft-size is only relevant when generating a single frame,
+    /// else it is set automatically. Setting it to 0 uses the entire .wav file (could be too long!).
     #[arg(short = 'f', long, default_value_t = 512)]
     fft_size: u32,
 
@@ -38,7 +40,7 @@ pub struct Cli {
     #[arg(short = 's', long, default_value_t = false)]
     stretch_spectrum: bool,
 
-    /// image to audio conversion method. 0 => generate one frame. 1 => generate three frames from the rgb channels.
+    /// Image to audio conversion method. 0 => generate one frame. 1 => generate three frames from the rgb channels.
     /// 2 or higher => generate this many frames from a subset of the image spectrum.
     #[arg(short = 'i', long, default_value_t = 0)]
     pub i2a_method: u64,
@@ -48,11 +50,13 @@ pub struct Cli {
     frame_rate: u8,
 
     /// Generate a single frame instead of the entire image sequence.
-    /// Specify the start sample, using the number of samples defined by --fft_size.
+    /// Specify the start sample, this uses as many samples as defined by --fft_size.
     #[arg(short = 'S', long)]
     pub single_frame: Option<u64>,
 
-    /// audio to image conversion method. // TODO
+    /// Audio to image conversion method. 0 => simple diagonal map, 1 => diagonal map + inverse 2D fft,
+    /// 2 => simple linear map (significantly smaller images!), 3 => linear map + inverse 2D fft,
+    /// 4 => same as 2, but transposed (flip the matrix but don't swap width / height), 5 or higher => same as 3 but transposed.
     #[arg(short = 'a', long, default_value_t = 0)]
     pub a2i_method: u64,
 
@@ -127,16 +131,13 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
 
             // multiply by 2 (stereo file)
             let start_sample = (sample_idx * 2) as usize;
-            let table_size = cl_arguments.fft_size as usize;
+            let mut table_size = cl_arguments.fft_size as usize;
+            if table_size == 0 { table_size = nr_samples as usize / 2 };
             let end_sample = start_sample + (table_size * 2);
-            let img_dimension = (table_size - 1) / 2;
 
             generate_frame_from_audio(
                 format!("{}{}", &cl_arguments.output_dir, out_file_name).as_str(),
                 &samples[start_sample..end_sample],
-                table_size,
-                img_dimension,
-                img_dimension,
                 cl_arguments)?;
         },
         None => for i in 0..nr_frames {
@@ -148,14 +149,10 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
 
             // ... here it does not, multiply by 2, for 2 audio channels
             let end_sample = start_sample + (table_size * 2) as usize;
-            let img_dimension = ((table_size - 1) / 2) as usize;
 
             generate_frame_from_audio(
                 format!("{}{}_{}", &cl_arguments.output_dir, i, out_file_name).as_str(),
                 &samples[start_sample..end_sample],
-                table_size as usize,
-                img_dimension,
-                img_dimension,
                 cl_arguments)?;
         },
     }
@@ -167,31 +164,31 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
 fn generate_frame_from_audio(
     name: &str,
     audio_data: &[f64],
-    table_len: usize,
-    width: usize,
-    height: usize,
     cl_arguments: &Cli)
     -> Result<(), Box<dyn std::error::Error>>
 {
+    // get all samples of the respective channels
+    let left_channel: Vec<f64> = audio_data.iter().step_by(2).cloned().collect();
+    let right_channel: Vec<f64> = audio_data.iter().skip(1).step_by(2).cloned().collect();
+    // map those samples into 2D space
+    let lum_vec_left = map_samples_into_2d(&left_channel, cl_arguments);
+    let lum_vec_right = map_samples_into_2d(&right_channel, cl_arguments);
+    // max value
+    let lum_max = max_abs(&lum_vec_left).max(max_abs(&lum_vec_right))
+        / f64::powf(10.0, cl_arguments.vibrancy);
+    let scale = 255.0 / lum_max;
+
+    // get the image dimensions
+    // (this could be avoided by returning a struct from map_samples_into_2d...)
+    assert_eq!(lum_vec_left.len(), lum_vec_right.len());
+    let width = lum_vec_left.len().isqrt();
+    let height = lum_vec_left.len() / width;
+
     // This will hold the colour values of all pixels
     // three elements in this Vec make one pixel in rgb (thus multiply by 3)
     let mut pixel_data: Vec<u8> = Vec::with_capacity(width * height * 3);
 
-    // get all samples of the respective channels
-    let left_channel: Vec<f64> = audio_data.iter().step_by(2).cloned().collect();
-    let right_channel: Vec<f64> = audio_data.iter().skip(1).step_by(2).cloned().collect();
-    let mid: Vec<f64> = audio_data.chunks(2)
-        .map(|chunk| chunk.iter().sum())
-        .collect();
-
-    let lum_vec_left = map_samples_into_2d(&left_channel, table_len);
-    let lum_vec_right = map_samples_into_2d(&right_channel, table_len);
-    let lum_vec_mid = map_samples_into_2d(&mid, table_len);
-
-    let lum_max = max_abs(&lum_vec_left).max(max_abs(&lum_vec_right)).max(max_abs(&lum_vec_mid))
-        / f64::powf(10.0, cl_arguments.vibrancy);
-    let scale = 255.0 / lum_max;
-
+    // How the audio channels influence the color
     let color_mult: [f64; 6] = cl_arguments
         .color_map
         .split(',')
@@ -223,15 +220,14 @@ fn generate_frame_from_audio(
 /// # Arguments
 ///
 /// * `samples` - A slice of 1D samples to be mapped.
-/// * `table_len` - The desired length of the FFT table (used to determine 2D dimensions).
+/// * `cl_arguments` - Command-line arguments for additional options (e.g., method selection).
 ///
 /// # Returns
 ///
 /// A `Vec<f64>` representing the real part of the 2D FFT-transformed samples.
-fn map_samples_into_2d(samples: &[f64], table_len: usize) -> Vec<f64> {
+fn map_samples_into_2d(samples: &[f64], cl_arguments: &Cli) -> Vec<f64> {
     let sample_max = max_abs(samples);
-    let width = (table_len - 1) / 2;
-    let height = width;
+    let table_len = samples.len();
 
     // Convert the image buffer to complex numbers to be able to compute the FFT.
     let mut buffer: Vec<Complex<f64>> = samples
@@ -244,19 +240,41 @@ fn map_samples_into_2d(samples: &[f64], table_len: usize) -> Vec<f64> {
     let fft = planner.plan_fft_forward(table_len);
     fft.process(&mut buffer);
 
-    // get 2D vector:
-    // TODO other methods to get 2D from 1D?
-    buffer = linear_to_diagonals(&buffer, width, height);
+    return if cl_arguments.a2i_method < 2 {
+        let width = (table_len - 1) / 2;
+        let height = width;
 
-    // apply inverse 2D FFT
-    ifft_2d(width, height, &mut buffer);
+        // get 2D vector:
+        buffer = linear_to_diagonals(&buffer, width, height);
 
-    // Output of ifft_2d is transposed, transpose back and collect real part
-    // TODO maybe skip this (image is mirrored)
-    transpose(width, height, &buffer)
-        .iter()
-        .map(|complex| complex.re )
-        .collect()
+        if cl_arguments.a2i_method == 1 {
+            // apply inverse 2D FFT
+            ifft_2d(width, height, &mut buffer);
+        }
+
+        buffer.iter().map(|complex| complex.re).collect()
+
+    } else {
+        let width = table_len.isqrt();
+        let height = table_len / width;
+
+        buffer.truncate(width * height);
+
+        if cl_arguments.a2i_method == 3 || cl_arguments.a2i_method == 5 {
+            // apply inverse 2D FFT
+            ifft_2d(width, height, &mut buffer);
+        }
+
+        if cl_arguments.a2i_method > 3 {
+            // transpose the matrix
+            transpose(width, height, &buffer)
+                .iter()
+                .map(|complex| complex.re)
+                .collect()
+        } else {
+            buffer.iter().map(|complex| complex.re).collect()
+        }
+    }
 }
 
 //////////////////////////////////////////////////////////////////
