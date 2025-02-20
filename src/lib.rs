@@ -156,12 +156,9 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
                     println!("Printing progress bar failed!");
                 }
 
-                // dividing by 2 for overlapping windows and multiplying by 2 for 2 interleaved audio
-                // channels cancels out here:
-                let start_sample = (table_size * i) as usize;
-
-                // ... here it does not, multiply by 2, for 2 audio channels
-                let end_sample = start_sample + (table_size * 2) as usize;
+                // dividing by 2 for overlapping windows and multiplying by nr_channels (interleaved audio)
+                let start_sample = (table_size * i / 2) as usize * nr_channels as usize;
+                let end_sample = start_sample + (table_size as usize * nr_channels as usize);
 
                 generate_frame_from_audio(
                     format!("{}{:05}_{}", &cl_arguments.output_dir, i, out_file_name).as_str(),
