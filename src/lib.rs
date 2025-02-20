@@ -92,7 +92,7 @@ pub struct Cli {
 /// the visuals can be supplied with the cli argument.
 pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     let file_name = Path::new(file_path).file_stem().and_then(|s| s.to_str()).unwrap();
-    let samples = read_from_wav(file_path);
+    let samples = read_from_wav(file_path)?;
     let nr_samples = samples.len() as u32;
     let audio_spec = get_wav_specs(file_path);
     let sample_rate = audio_spec.sample_rate;

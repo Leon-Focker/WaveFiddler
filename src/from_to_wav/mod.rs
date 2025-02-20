@@ -38,10 +38,38 @@ pub fn write_to_wav (name: &str, data: &[f64], normalize: bool, plot_waveform: O
 }
 
 /// reads the sample data into a Vector, the channel data is interleaved.
-pub fn read_from_wav(file_path: &str) -> Vec<f64> {
-    let mut reader = hound::WavReader::open(file_path).unwrap();
-    reader.samples::<i32>().map(| s | s.unwrap() as f64).collect()
+pub fn _read_from_wav(file_path: &str) -> Result<Vec<f64>, Box<dyn std::error::Error>> {
+    let mut reader = hound::WavReader::open(file_path)?;
+    dbg!("mauuu");
+    dbg!(reader.spec());
+    Ok(reader.samples::<i32>().map(| s | s.unwrap() as f64).collect())
 }
+
+pub fn read_from_wav(file_path: &str) -> Result<Vec<f64>, Box<dyn std::error::Error>> {
+    let mut reader = hound::WavReader::open(file_path)?;
+
+    // Check for sample format and choose best option
+    let samples = match reader.spec().sample_format {
+        hound::SampleFormat::Int => {
+            if reader.spec().bits_per_sample <= 16 {
+                reader.samples::<i16>()
+                    .map(|s| s.unwrap() as f64)
+                    .collect()
+            } else {
+                reader.samples::<i32>()
+                    .map(|s| s.unwrap() as f64)
+                    .collect()
+            }
+        }
+        hound::SampleFormat::Float => {
+            reader.samples::<f32>()
+                .map(|s| s.unwrap() as f64)
+                .collect()
+        }
+    };
+    Ok(samples)
+}
+
 
 /// returns a WavSpec struct with fields: channels, sample_rate, bits_per_sample, sample_format
 pub fn get_wav_specs(file_path: &str) -> WavSpec {
