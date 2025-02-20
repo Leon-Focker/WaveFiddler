@@ -111,10 +111,10 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
     let out_file_name: &str = match &cl_arguments.name {
         None => &format!("{}.jpg", file_name),
         Some(string) => {
-            let ext = Path::new(string).extension().and_then(|s| s.to_str()).unwrap();
+            let ext = Path::new(string).extension().and_then(|s| s.to_str()).unwrap_or("jpg");
             if !["jpg", "png"].contains(&ext) {
             return Err("invalid output file extension when converting to an image!".into());
-            } else { string }
+            } else { &format!("{}.{}", Path::new(string).file_stem().and_then(|s| s.to_str()).unwrap(), ext) }
         },
     };
 
@@ -325,10 +325,10 @@ pub fn image_to_waves(file_path: &str, cl_arguments: &Cli) -> Result<(), Box<dyn
     let out_file_name: &str = match &cl_arguments.name {
         None => &format!("{}_{}.wav", file_name, table_len),
         Some(string) => {
-            let ext = Path::new(string).extension().and_then(|s| s.to_str()).unwrap();
+            let ext = Path::new(string).extension().and_then(|s| s.to_str()).unwrap_or("wav");
             if !["wav"].contains(&ext) {
                 return Err("invalid output file extension when converting to a audio!".into());
-            } else { string }
+            } else { &format!("{}.{}", Path::new(string).file_stem().and_then(|s| s.to_str()).unwrap(), ext) }
         },
     };
 
