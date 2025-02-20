@@ -18,17 +18,25 @@ Generating a black and white image sequence from a mono file.
 
 ``.\wavefiddler.exe .\examples\kick.wav -a 1``
 
+https://github.com/user-attachments/assets/7773feac-a899-4f7e-a0a1-66734812a3fa
+
 Changing the color map to get a different hue, only generate the first frame
 
 ``.\wavefiddler.exe .\examples\kick.wav -a 1 -s 0 -c 0.2,0,1,0,0.5,0``
 
-Use a different method to generate a single image
+![kick](https://github.com/user-attachments/assets/3765e391-443a-43d4-934c-928efd2dc602)
+
+Use a different method to generate a single image. A stereo soundfile produces more interesting colours
 
 ``.\wavefiddler.exe .\examples\bells.wav -s 0``
+
+![bells1](https://github.com/user-attachments/assets/ffe9e2bf-3c3d-4fe4-a774-cacfa56aa64c)
 
 Use yet another method, start at the 24000s sample of the soundfile, use 40000 samples and make it vibrant
 
 ``.\wavefiddler.exe .\examples\bells.wav -s 24000 -a 4 -f 40000 -v 5 -c 0.5,0,0,1,0,0.2``
+
+![bells](https://github.com/user-attachments/assets/bd739e06-2808-4dac-bec2-a0b926e4e47c)
 
 **Image to sound**
 
@@ -36,12 +44,22 @@ Get a wavetable of length 512 from an image, plot the generated waveform and spe
 
 ``.\wavefiddler.exe .\examples\cat.jpg --plot-waveforms --plot-spectra``
 
+![example_12](https://github.com/user-attachments/assets/8b380739-405e-4079-a3d8-8f730c753955)
+![example_11](https://github.com/user-attachments/assets/ef0a774f-8c28-4ae2-82bd-47261d160847)
+
 Get a wavetable of length 512 from an image, plot the generated waveform and spectrum but fit the original spectrum into the length of the wavetable
 
 ``.\wavefiddler.exe .\examples\cat.jpg -S --plot-waveforms --plot-spectra``
+
+![waveform](https://github.com/user-attachments/assets/013add22-ce85-48f3-856a-83da052e2299)
+![spectrum_grey](https://github.com/user-attachments/assets/2748740c-0a77-4766-b7a2-f8b032daff63)
 
 Get a wavetable with 100 frames and automatic fft-size, name the output file
 
 ``.\wavefiddler.exe .\examples\cat.jpg -f 0 -i 100 -n "cat.wav"``
 
+https://github.com/user-attachments/assets/7298ed7b-38be-4c8e-8a08-6db47ced0aca
+
 ``.\wavefiddler.exe .\examples\phillippa.png -f 0 -i 100 -n "phillippa"``
+
+https://github.com/user-attachments/assets/b38eb19e-9ad5-4f1d-9d55-a7cf444717d6
