@@ -1,0 +1,80 @@
+name: Build Release Binaries
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+          - os: windows-latest
+            arch: x86_64
+          - os: macos-latest
+            arch: x86_64
+          - os: macos-latest
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+        
+      - name: Install Rust targets (macOS)
+        if: runner.os == 'macOS'
+        run: rustup target add x86_64-apple-darwin aarch64-apple-darwin
+
+      - name: Build release binary
+        run: |
+          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+            cargo build --release --target ${{ matrix.arch }}-apple-darwin
+          else
+            cargo build --release
+          fi
+        shell: bash
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            target/${{ matrix.arch }}-apple-darwin/release/wavefiddler*
+            target/release/wavefiddler*
+
+  release:
+    needs: build  # Ensure all builds finish first
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Archive each directory as .zip
+        run: |
+          cd artifacts
+          for dir in *; do
+            if [ -d "$dir" ]; then
+              zip -r "$dir.zip" "$dir"
+            fi
+          done
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.zip
+          token: ${{ secrets.GITHUB_TOKEN }}
