@@ -135,6 +135,12 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
             if table_size == 0 { table_size = nr_samples as usize / 2 };
             let end_sample = start_sample + (table_size * 2);
 
+            if end_sample >= nr_samples as usize {
+                return Err(format!("Starting at sample {} with an fft-size of {} is out of bounds for a file with {} samples!",
+                start_sample, table_size, nr_samples)
+                    .into());
+            }
+
             generate_frame_from_audio(
                 format!("{}{}", &cl_arguments.output_dir, out_file_name).as_str(),
                 &samples[start_sample..end_sample],
