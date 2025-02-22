@@ -69,7 +69,8 @@ pub struct Cli {
     /// The dimensions for the generated image as a list of width,height.
     /// If none are specified, they are chosen automatically to produce a square image.
     /// This does not simple 'rescale' the generated image! Changing the image dimensions has
-    /// a huge impact in the generation of the images.
+    /// a huge impact in the generation of the images. While method 2 might be less interesting,
+    /// methods 2-5 yield way better results.
     #[arg(short = 'd', long)]
     image_dimensions: Option<String>,
 
