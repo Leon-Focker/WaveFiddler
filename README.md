@@ -15,7 +15,7 @@ MacOS >= 15.0 ``-d com.apple.quarantine ./wavefiddler``
 - From an image (.jpg or .png) to a wavetable (.wav) with multiple frames.
 
 ## Examples
-To run these examples, make sure to adjust the paths to the WaveFiddler binary and this examples folder based on their locations on your system. Run ``./wavefiddler --help`` for detailed documentation on usage and available options. 
+To run these examples, make sure to adjust the paths to the WaveFiddler binary and this examples folder based on their locations on your system. When you don't specify an output directory, the results are put into ./wavefiddler_outputs/ (which will be created if it does not exist). Should that fail, specify an output directory with -o. Run ``./wavefiddler --help`` for detailed documentation on usage and available options. 
 
 **Sound to Image**
 
