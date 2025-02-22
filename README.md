@@ -32,6 +32,8 @@ Changing the color map to get a different hue, only generate the first frame<br>
 Specifying image dimensions and using a different method<br>
 ``.\wavefiddler.exe .\examples\kick.wav -a 3 -s 0 -c 0.2,0,1,0,0.5,0 -d 400,200``
 
+![kicktt](https://github.com/user-attachments/assets/9096561e-52c1-464c-b6b6-f87eb9c9e15a)
+
 Use a different method to generate a single image. A stereo soundfile produces more interesting colours<br>
 ``.\wavefiddler.exe .\examples\bells.wav -s 0``
 
