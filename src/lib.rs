@@ -55,7 +55,7 @@ pub struct Cli {
     pub single_frame: Option<u64>,
 
     /// Audio->image conversion method. 0 => simple diagonal map, 1 => diagonal map + inverse 2D fft,
-    /// 2 => simple linear map (significantly smaller images!), 3 => linear map + inverse 2D fft,
+    /// 2 => simple linear map (significantly smaller images with default dimensions!), 3 => linear map + inverse 2D fft,
     /// 4 => same as 2, but transposed (flip the matrix but don't swap width / height), 5 or higher => same as 3 but transposed.
     #[arg(short = 'a', long, default_value_t = 0)]
     pub a2i_method: u64,
@@ -65,6 +65,13 @@ pub struct Cli {
     /// red = left * nr1 + right * nr2, green = left * nr3 + right * nr4, blue = left * nr5 + right * nr6
     #[arg(short, long, default_value_t = String::from("1,0,0,1,0.5,0.5"))]
     color_map: String,
+
+    /// The dimensions for the generated image as a list of width,height.
+    /// If none are specified, they are chosen automatically to produce a square image.
+    /// This does not simple 'rescale' the generated image! Changing the image dimensions has
+    /// a huge impact in the generation of the images.
+    #[arg(short = 'd', long)]
+    image_dimensions: Option<String>,
 
     /// How vibrant a generated image will be. Values between 0 and 5 work best.
     #[arg(short = 'v', long, default_value_t = 3.0)]
@@ -197,19 +204,34 @@ fn generate_frame_from_audio(
             )
         };
 
+    // get the image dimensions
+    let (width, height, resample): (usize, usize, bool) =
+        match &cl_arguments.image_dimensions {
+            // calculate width and height
+            None => {
+                if cl_arguments.a2i_method < 2 {
+                    ((left_channel.len() - 1) / 2, (left_channel.len() - 1) / 2, false)
+                } else {
+                    (left_channel.len().isqrt(), left_channel.len() / left_channel.len().isqrt(), false)
+                }
+            }
+            // use width, height from cli
+            Some(s)=> {
+                // from user argument
+                let mut dimensions = s
+                    .split(',')
+                    .map(|x| x.parse::<usize>().unwrap_or(1));
+                (dimensions.next().unwrap_or(1), dimensions.next().unwrap_or(1), true)
+            }
+        };
+
     // map those samples into 2D space
-    let lum_vec_left = map_samples_into_2d(&left_channel, cl_arguments);
-    let lum_vec_right = map_samples_into_2d(&right_channel, cl_arguments);
+    let lum_vec_left = map_samples_into_2d(&left_channel, width, height, resample, cl_arguments);
+    let lum_vec_right = map_samples_into_2d(&right_channel, width, height, resample, cl_arguments);
     // max value
     let lum_max = max_abs(&lum_vec_left).max(max_abs(&lum_vec_right))
         / f64::powf(10.0, cl_arguments.vibrancy);
     let scale = 255.0 / lum_max;
-
-    // get the image dimensions
-    // (this could be avoided by returning a struct from map_samples_into_2d...)
-    assert_eq!(lum_vec_left.len(), lum_vec_right.len());
-    let width = lum_vec_left.len().isqrt();
-    let height = lum_vec_left.len() / width;
 
     // This will hold the colour values of all pixels
     // three elements in this Vec make one pixel in rgb (thus multiply by 3)
@@ -252,7 +274,7 @@ fn generate_frame_from_audio(
 /// # Returns
 ///
 /// A `Vec<f64>` representing the real part of the 2D FFT-transformed samples.
-fn map_samples_into_2d(samples: &[f64], cl_arguments: &Cli) -> Vec<f64> {
+fn map_samples_into_2d(samples: &[f64], width: usize, height: usize, needs_resample: bool, cl_arguments: &Cli) -> Vec<f64> {
     let sample_max = max_abs(samples);
     let table_len = samples.len();
 
@@ -267,10 +289,12 @@ fn map_samples_into_2d(samples: &[f64], cl_arguments: &Cli) -> Vec<f64> {
     let fft = planner.plan_fft_forward(table_len);
     fft.process(&mut buffer);
 
-    if cl_arguments.a2i_method < 2 {
-        let width = (table_len - 1) / 2;
-        let height = width;
+    // resample when necessary
+    if needs_resample {
+       buffer = resample(&buffer, width * height);
+    }
 
+    if cl_arguments.a2i_method < 2 {
         // get 2D vector:
         buffer = linear_to_diagonals(&buffer, width, height);
 
@@ -278,12 +302,9 @@ fn map_samples_into_2d(samples: &[f64], cl_arguments: &Cli) -> Vec<f64> {
             // apply inverse 2D FFT
             ifft_2d(width, height, &mut buffer);
         }
-
         buffer.iter().map(|complex| complex.re).collect()
 
     } else {
-        let width = table_len.isqrt();
-        let height = table_len / width;
 
         buffer.truncate(width * height);
 
