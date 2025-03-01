@@ -109,7 +109,7 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
 
     // we double table_size, so the windows overlap
     let table_size = (sample_rate / frame_rate) * 2;
-    let nr_frames = ((nr_samples / nr_channels as u32) / (table_size / 2)) - 1;
+    let nr_frames = ((nr_samples / nr_channels as u32) / (table_size / 2)).saturating_sub(1);
 
     // make sure the output directory exists
     ensure_directory_exists(&cl_arguments.output_dir)
