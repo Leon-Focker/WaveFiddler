@@ -340,6 +340,10 @@ pub fn image_to_waves(file_path: &str, cl_arguments: &Cli) -> Result<(), Box<dyn
         _ => table_len * cl_arguments.i2a_method as usize,
     };
 
+    // make sure the output directory exists
+    ensure_directory_exists(&cl_arguments.output_dir)
+        .expect("something went wrong while checking for the output directory");
+
     // store the generated audio data here
     let mut audio_data = Vec::with_capacity(audio_data_len);
 
