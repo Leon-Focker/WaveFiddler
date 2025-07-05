@@ -35,7 +35,7 @@ pub struct Cli {
     #[arg(short = 'f', long, default_value_t = 512)]
     fft_size: u32,
 
-    /// For image->audio conversion. When true, try to retain the spectral envelope and stretch it to fit the fft-size.
+    /// For image->audio conversion. When true, try to retain the spectral envelope. This might introduce gaps into the resulting audio file.
     /// Else use the spectrum as is, and discard harmonics, if there is too many.
     #[arg(short = 'S', long, default_value_t = false)]
     stretch_spectrum: bool,
@@ -141,7 +141,7 @@ pub fn sound_to_img_sequence(file_path: &str, cl_arguments: &Cli) -> Result<(), 
             let start_sample = (sample_idx * 2) as usize;
             let mut table_size = cl_arguments.fft_size as usize;
             if table_size == 0 { table_size = nr_samples as usize / 2 };
-            let end_sample = start_sample + (table_size * 2);
+            let end_sample = start_sample + (table_size * 2) - 1;
 
             if end_sample >= nr_samples as usize {
                 return Err(format!("Starting at sample {} with an fft-size of {} is out of bounds for a file with {} samples!",
@@ -292,7 +292,7 @@ fn map_samples_into_2d(samples: &[f64], width: usize, height: usize, needs_resam
 
     // resample when necessary
     if needs_resample {
-       buffer = resample(&buffer, width * height);
+        buffer = resample(&buffer, width * height);
     }
 
     if cl_arguments.a2i_method < 2 {
